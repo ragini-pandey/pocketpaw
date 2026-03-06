@@ -1,5 +1,6 @@
 """Tests for Signal Channel Adapter — Sprint 20."""
 
+import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pocketpaw.bus.adapters.signal_adapter import SignalAdapter
@@ -266,7 +267,7 @@ class TestSignalAdapterErrorRecovery:
         await adapter.send(msg)
 
     async def test_handle_message_exception_caught(self):
-        """Exceptions in _handle_message are caught."""
+        """Exceptions from _publish_inbound propagate to the poll loop (which catches them)."""
         adapter = SignalAdapter(phone_number="+1234567890")
         adapter._bus = MagicMock()
         adapter._bus.publish_inbound = AsyncMock(side_effect=RuntimeError("Bus error"))
@@ -277,8 +278,9 @@ class TestSignalAdapterErrorRecovery:
                 "dataMessage": {"message": "trigger error"},
             }
         }
-        # Should not raise — error should be caught in _publish_inbound
-        await adapter._handle_message(msg_data)
+        # Exception propagates from _handle_message; the poll loop catches it at the outer level
+        with pytest.raises(RuntimeError, match="Bus error"):
+            await adapter._handle_message(msg_data)
 
 
 class TestSignalAdapterBusIntegration:
@@ -393,19 +395,22 @@ class TestSignalAdapterLifecycle:
 
     async def test_stop_closes_http_client(self):
         """Stop closes the HTTP client."""
+        import httpx
+
         adapter = SignalAdapter(phone_number="+1234567890")
         bus = MagicMock()
         bus.subscribe_outbound = MagicMock()
         bus.unsubscribe_outbound = MagicMock()
 
-        with patch.object(adapter, "_poll_loop", new_callable=AsyncMock):
+        mock_http_client = AsyncMock(spec=httpx.AsyncClient)
+        with patch("httpx.AsyncClient", return_value=mock_http_client), \
+             patch.object(adapter, "_poll_loop", new_callable=AsyncMock):
             await adapter.start(bus)
-            http_client = adapter._http
 
             await adapter.stop()
 
             # HTTP client should be closed
-            http_client.aclose.assert_called_once()
+            mock_http_client.aclose.assert_called_once()
 
     async def test_double_stop_is_safe(self):
         """Calling stop twice doesn't raise errors."""

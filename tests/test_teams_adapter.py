@@ -5,6 +5,7 @@ botbuilder-core is mocked since it's an optional dependency.
 
 import sys
 from types import SimpleNamespace
+import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 # Mock botbuilder before importing the adapter
@@ -243,8 +244,9 @@ class TestTeamsAdapterErrorRecovery:
         )
 
         turn_ctx = SimpleNamespace(activity=activity)
-        # Should not raise — error should be caught
-        await adapter._process_activity(turn_ctx)
+        # Exception propagates from _process_activity; the webhook handler catches it at the outer level
+        with pytest.raises(RuntimeError, match="Bus error"):
+            await adapter._process_activity(turn_ctx)
 
     async def test_webhook_handler_invalid_json(self):
         """Webhook handler handles invalid JSON gracefully."""

@@ -540,8 +540,6 @@ class TestMatrixAdapterStreaming:
 
     async def test_stream_with_edit_event_id(self):
         """Streaming edits existing message when event_id is available."""
-        import time
-
         adapter = MatrixAdapter(
             homeserver="https://matrix.org",
             user_id="@bot:matrix.org",
