@@ -48,6 +48,7 @@ class TelegramAdapter(BaseChannelAdapter):
         self.allowed_user_id = allowed_user_id
         self.app: Application | None = None
         self._typing_tasks: dict[str, asyncio.Task] = {}  # chat_id -> typing refresh task
+        self._buffers: dict[str, Any] = {}
 
     @property
     def channel(self) -> Channel:
@@ -235,8 +236,6 @@ class TelegramAdapter(BaseChannelAdapter):
             task.cancel()
 
     # --- Buffering logic ---
-
-    _buffers: dict[str, Any] = {}
 
     async def _handle_stream_chunk(self, message: OutboundMessage) -> None:
         chat_id = message.chat_id
