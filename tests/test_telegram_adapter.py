@@ -7,8 +7,7 @@ Created: 2026-03-06
 
 import asyncio
 import sys
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -26,9 +25,9 @@ sys.modules["telegram.error"] = mock_telegram.error
 sys.modules["telegram.ext"] = MagicMock()
 
 from pocketpaw.bus.adapters.telegram_adapter import (  # noqa: E402
-    TelegramAdapter,
     _BUFFER_UPDATE_INTERVAL,
     _TYPING_REFRESH_INTERVAL,
+    TelegramAdapter,
 )
 from pocketpaw.bus.events import Channel, OutboundMessage  # noqa: E402
 
@@ -48,6 +47,9 @@ def adapter_with_app(adapter):
 
     adapter.app = MagicMock()
     adapter.app.bot = mock_bot
+    adapter.app.updater.stop = AsyncMock()
+    adapter.app.stop = AsyncMock()
+    adapter.app.shutdown = AsyncMock()
     return adapter
 
 
@@ -98,7 +100,7 @@ class TestTypingIndicator:
         # Should not raise
         await adapter_with_app._send_typing_indicator("12345")
 
-    def test_start_typing_indicator_creates_task(self, adapter_with_app):
+    async def test_start_typing_indicator_creates_task(self, adapter_with_app):
         """_start_typing_indicator creates a background task."""
         adapter_with_app._start_typing_indicator("12345")
 
@@ -109,7 +111,7 @@ class TestTypingIndicator:
         # Cleanup
         task.cancel()
 
-    def test_start_typing_indicator_idempotent(self, adapter_with_app):
+    async def test_start_typing_indicator_idempotent(self, adapter_with_app):
         """Starting typing indicator twice doesn't create duplicate tasks."""
         adapter_with_app._start_typing_indicator("12345")
         first_task = adapter_with_app._typing_tasks["12345"]
@@ -122,12 +124,13 @@ class TestTypingIndicator:
         # Cleanup
         first_task.cancel()
 
-    def test_stop_typing_indicator_cancels_task(self, adapter_with_app):
+    async def test_stop_typing_indicator_cancels_task(self, adapter_with_app):
         """_stop_typing_indicator cancels the task."""
         adapter_with_app._start_typing_indicator("12345")
         task = adapter_with_app._typing_tasks["12345"]
 
         adapter_with_app._stop_typing_indicator("12345")
+        await asyncio.sleep(0)  # Let event loop deliver the CancelledError
 
         assert "12345" not in adapter_with_app._typing_tasks
         assert task.cancelled() or task.done()
@@ -314,6 +317,7 @@ class TestOnStop:
         task2 = adapter_with_app._typing_tasks["67890"]
 
         await adapter_with_app._on_stop()
+        await asyncio.sleep(0)  # Let event loop deliver the CancelledErrors
 
         assert len(adapter_with_app._typing_tasks) == 0
         assert task1.cancelled() or task1.done()
