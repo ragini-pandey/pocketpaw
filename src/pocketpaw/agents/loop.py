@@ -109,6 +109,36 @@ class AgentLoop:
             if not message:
                 continue
 
+            # Intercept /kill before entering session-locked pipeline so it
+            # can cancel an in-flight task without being blocked by the lock.
+            # Uses the same regex as CommandHandler to avoid false positives
+            # on normal sentences containing "kill".
+            content = message.content.strip()
+            _kill_match = re.match(r"^[/!]kill(?:@\S+)?\s*$", content, re.IGNORECASE)
+            if _kill_match:
+                cancelled = await self.cancel_session(message.session_key)
+                reply = (
+                    "Agent run cancelled for this session."
+                    if cancelled
+                    else "No active agent run for this session."
+                )
+                await self.bus.publish_outbound(
+                    OutboundMessage(
+                        channel=message.channel,
+                        chat_id=message.chat_id,
+                        content=reply,
+                    )
+                )
+                await self.bus.publish_outbound(
+                    OutboundMessage(
+                        channel=message.channel,
+                        chat_id=message.chat_id,
+                        content="",
+                        is_stream_end=True,
+                    )
+                )
+                continue
+
             # 2. Process message in background task (to not block loop)
             session_key = message.session_key
             task = asyncio.create_task(self._process_message(message))

@@ -77,6 +77,7 @@ class TelegramAdapter(BaseChannelAdapter):
             "model",
             "tools",
             "help",
+            "kill",
         )
         for cmd_name in _cmds:
             self.app.add_handler(CommandHandler(cmd_name, self._handle_command))
@@ -117,6 +118,7 @@ class TelegramAdapter(BaseChannelAdapter):
                     BotCommand("model", "Show or switch model"),
                     BotCommand("tools", "Show or switch tool profile"),
                     BotCommand("help", "Show available commands"),
+                    BotCommand("kill", "Cancel the current agent run"),
                 ]
             )
         except Exception as e:
