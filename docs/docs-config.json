@@ -59,12 +59,38 @@
             {
               "label": "Run AI with Ollama",
               "href": "/guides/local-llm-agent",
-              "description": "Free, private AI using local models — no API key"
+              "description": "Free, private AI using local models, no API key"
             },
             {
               "label": "All Guides",
               "href": "/guides",
               "description": "Browse all tutorials and walkthroughs"
+            }
+          ]
+        },
+        {
+          "label": "Reference",
+          "type": "dropdown",
+          "items": [
+            {
+              "label": "Channels",
+              "href": "/channels",
+              "description": "Connect to 9+ messaging platforms"
+            },
+            {
+              "label": "Integrations",
+              "href": "/integrations",
+              "description": "Gmail, Calendar, Drive, Spotify, and more"
+            },
+            {
+              "label": "Tools",
+              "href": "/tools",
+              "description": "50+ built-in tools and custom tool creation"
+            },
+            {
+              "label": "API Reference",
+              "href": "/api",
+              "description": "REST and WebSocket APIs"
             }
           ]
         }
