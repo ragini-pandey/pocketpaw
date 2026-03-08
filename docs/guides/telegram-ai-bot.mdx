@@ -62,7 +62,7 @@ A Telegram bot that:
     To restrict who can use the bot (recommended):
     ```bash
     # Your Telegram user ID (get it from @userinfobot)
-    export POCKETPAW_ALLOWED_TELEGRAM_IDS="123456789"
+    export POCKETPAW_ALLOWED_USER_ID="123456789"
     ```
   </Step>
 
@@ -107,8 +107,8 @@ A Telegram bot that:
 By default, anyone who finds your bot can message it. Lock it down:
 
 ```bash
-# Only allow specific Telegram user IDs
-export POCKETPAW_ALLOWED_TELEGRAM_IDS="123456789,987654321"
+# Only allow a specific Telegram user ID
+export POCKETPAW_ALLOWED_USER_ID="123456789"
 ```
 
 Get your user ID by messaging `@userinfobot` on Telegram.
