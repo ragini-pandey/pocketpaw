@@ -1,3 +1,6 @@
+// Tauri IPC commands for the PocketPaw desktop client.
+// Updated: 2026-03-09 — Fix cross-platform build: use #[cfg(windows)] for
+//   Windows-specific process creation flags instead of cfg!(windows) runtime check.
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::net::TcpStream;
@@ -157,46 +160,54 @@ pub async fn install_pocketpaw(app: AppHandle, profile: String) -> Result<bool, 
     Ok(success)
 }
 
+/// Spawn backend process — platform-specific to handle Windows console hiding.
+#[cfg(windows)]
+fn _spawn_backend(port_str: &str) -> std::io::Result<std::process::Child> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    const DETACHED_PROCESS: u32 = 0x00000008;
+
+    Command::new("pocketpaw")
+        .args(["serve", "--port", port_str])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .spawn()
+        .or_else(|_| {
+            Command::new("uv")
+                .args(["run", "pocketpaw", "serve", "--port", port_str])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+                .spawn()
+        })
+}
+
+#[cfg(not(windows))]
+fn _spawn_backend(port_str: &str) -> std::io::Result<std::process::Child> {
+    Command::new("pocketpaw")
+        .args(["serve", "--port", port_str])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .or_else(|_| {
+            Command::new("uv")
+                .args(["run", "pocketpaw", "serve", "--port", port_str])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+        })
+}
+
 /// Start the PocketPaw backend as a detached process on the given port.
 /// Returns immediately — frontend should poll check_backend_running to confirm.
 #[tauri::command]
 pub fn start_pocketpaw_backend(port: u16) -> Result<bool, String> {
     let port_str = port.to_string();
 
-    // Try direct `pocketpaw serve` first, then fall back to `uv run pocketpaw serve`
-    let result = if cfg!(windows) {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        const DETACHED_PROCESS: u32 = 0x00000008;
-
-        Command::new("pocketpaw")
-            .args(["serve", "--port", &port_str])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-            .spawn()
-            .or_else(|_| {
-                Command::new("uv")
-                    .args(["run", "pocketpaw", "serve", "--port", &port_str])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-                    .spawn()
-            })
-    } else {
-        Command::new("pocketpaw")
-            .args(["serve", "--port", &port_str])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .or_else(|_| {
-                Command::new("uv")
-                    .args(["run", "pocketpaw", "serve", "--port", &port_str])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-            })
-    };
+    // Try direct `pocketpaw serve` first, then fall back to `uv run pocketpaw serve`.
+    // On Windows, use creation_flags to hide the console window.
+    let result = _spawn_backend(&port_str);
 
     match result {
         Ok(_) => Ok(true),
