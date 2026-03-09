@@ -23,6 +23,10 @@ class AgentRouter:
         self.settings = settings
         self._backend = None
         self._active_backend_name: str | None = None
+
+        # NEW: fallback backend list (optional)
+        self._fallback_backends: list[str] = getattr(settings, "fallback_backends", [])
+
         self._initialize_backend()
 
     def _initialize_backend(self) -> None:
@@ -60,16 +64,59 @@ class AgentRouter:
         history: list[dict] | None = None,
         session_key: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Run the agent, yielding AgentEvent objects."""
-        if not self._backend:
-            yield AgentEvent(type="error", content="No agent backend initialized")
-            yield AgentEvent(type="done", content="")
-            return
-
-        async for event in self._backend.run(
-            message, system_prompt=system_prompt, history=history, session_key=session_key
-        ):
-            yield event
+        """Run the agent with simple backend fallback."""
+        backend_chain: list[str] = []
+        # primary backend
+        if self._active_backend_name:
+            backend_chain.append(self._active_backend_name)
+        # always include Claude fallback
+        backend_chain=[]
+        if self._active_backend_name:
+            backend_chain.append(self._active_backend_name)
+        backend_chain.extend(self._fallback_backends)
+        if "claude_agent_sdk" not in backend_chain:
+            backend_chain.append("claude_agent_sdk")
+        last_error: str | None = None
+        for backend_name in backend_chain:
+            cls = get_backend_class(backend_name)
+            if cls is None:
+                logger.warning("Backend '%s' not available", backend_name)
+                continue
+            try:
+                backend = cls(self.settings)
+                logger.info("Attempting backend: %s", backend_name)
+                async for event in backend.run(
+                    message,
+                    system_prompt=system_prompt,
+                    history=history,
+                    session_key=session_key,
+                ):
+                    if event.type == "error":
+                        # capture error but try next backend
+                        last_error = str(event.content)
+                        logger.warning(
+                            "Backend '%s' returned error: %s",
+                            backend_name,
+                            event.content,
+                        )
+                        break
+                    yield event
+                else:
+                    # backend completed successfully
+                    return
+            except Exception as exc:
+                last_error = str(exc)
+                logger.warning(
+                    "Backend '%s' raised exception: %s",
+                    backend_name,
+                    exc,
+                )
+                continue
+        yield AgentEvent(
+            type="error",
+            content=last_error or "All configured backends failed",
+        )
+        yield AgentEvent(type="done", content="")
 
     async def stop(self) -> None:
         """Stop the agent."""
