@@ -109,7 +109,7 @@ x-transition.opacity
             <div class="overflow-auto" style="max-height: calc(90vh - 70px);">
                 <!-- Syntax highlighted -->
                 <template x-if="viewerHighlightedHtml">
-                    <pre class="hljs p-6 text-sm leading-relaxed font-mono !bg-transparent !rounded-none"><code x-html="viewerHighlightedHtml"></code></pre>
+                    <pre class="hljs p-6 text-sm leading-relaxed font-mono" style="background:transparent;border-radius:0;margin:0"><code x-html="viewerHighlightedHtml"></code></pre>
                 </template>
                 <!-- Plain text fallback -->
                 <template x-if="!viewerHighlightedHtml">
