@@ -315,6 +315,14 @@ class AgentLoop:
             # 2. Build system prompt + session history concurrently (independent I/O)
             sender_id = message.sender_id
             file_context = (message.metadata or {}).get("file_context")
+            # Resolve working directory for AGENTS.md discovery:
+            # prefer explicit file_context path, then fall back to jail root.
+            agents_md_dir: str | None = None
+            if file_context and file_context.get("current_dir"):
+                agents_md_dir = file_context["current_dir"]
+            else:
+                agents_md_dir = str(self.settings.file_jail_path)
+
             system_prompt, history = await asyncio.gather(
                 self.context_builder.build_system_prompt(
                     user_query=content,
@@ -322,6 +330,7 @@ class AgentLoop:
                     sender_id=sender_id,
                     session_key=message.session_key,
                     file_context=file_context,
+                    agents_md_dir=agents_md_dir,
                 ),
                 self.memory.get_compacted_history(
                     session_key,
@@ -331,6 +340,25 @@ class AgentLoop:
                     llm_summarize=self.settings.compaction_llm_summarize,
                 ),
             )
+
+            # 2a. Emit AGENTS.md event for the dashboard Activity panel
+            try:
+                from pocketpaw.agents_md import AgentsMdLoader
+
+                agents_md = AgentsMdLoader().find_and_load(agents_md_dir)
+                if agents_md:
+                    await self.bus.publish_system(
+                        SystemEvent(
+                            event_type="agents_md_loaded",
+                            data={
+                                "path": str(agents_md.path),
+                                "preview": agents_md.preview,
+                                "session_key": session_key,
+                            },
+                        )
+                    )
+            except Exception:
+                pass  # Never let AGENTS.md discovery break the processing pipeline
 
             # 2b. Emit thinking event
             await self.bus.publish_system(
