@@ -50,6 +50,7 @@ def _read_identity_file(path: Path, strip: bool = False) -> str:
     _identity_file_cache[key] = _IdentityCache(content=content, mtime=mtime)
     return content
 
+
 _DEFAULT_INSTRUCTIONS = """\
 ## PocketPaw Tools (call via Bash)
 
@@ -192,9 +193,7 @@ class DefaultBootstrapProvider(BootstrapProviderProtocol):
         """Return a mtime mapping for every tracked identity file (0.0 if absent)."""
         return {
             name: (
-                (self.base_path / name).stat().st_mtime
-                if (self.base_path / name).exists()
-                else 0.0
+                (self.base_path / name).stat().st_mtime if (self.base_path / name).exists() else 0.0
             )
             for name in self._IDENTITY_FILES
         }
