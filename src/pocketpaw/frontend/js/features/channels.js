@@ -65,7 +65,9 @@ window.PocketPaw.Channels = {
             webhookSlots: [],
             showAddWebhook: false,
             newWebhookName: '',
-            newWebhookDescription: ''
+            newWebhookDescription: '',
+            // Alpine.js confirm dialog (replaces native confirm())
+            confirmDialog: null, // { title, message, onConfirm, onCancel } or null
         };
     },
 
@@ -74,6 +76,32 @@ window.PocketPaw.Channels = {
      */
     getMethods() {
         return {
+            /**
+             * Show an Alpine.js confirmation dialog instead of native confirm()
+             */
+            showConfirm(title, message, onConfirm, onCancel = null) {
+                this.confirmDialog = { title, message, onConfirm, onCancel };
+                this.$nextTick(() => { if (window.refreshIcons) window.refreshIcons(); });
+            },
+
+            /**
+             * Execute the confirm action and close the dialog
+             */
+            async confirmDialogAction() {
+                const cb = this.confirmDialog?.onConfirm;
+                this.confirmDialog = null;
+                if (cb) await cb();
+            },
+
+            /**
+             * Dismiss the confirm dialog (cancel)
+             */
+            async dismissConfirmDialog() {
+                const cb = this.confirmDialog?.onCancel;
+                this.confirmDialog = null;
+                if (cb) await cb();
+            },
+
             /**
              * Display name for channel tabs
              */
@@ -449,20 +477,13 @@ window.PocketPaw.Channels = {
                         this.installPrompt = null;
                         this.installLoading = false;
 
-                        // Show restart confirmation
-                        // TODO: Replace native confirm() with Alpine.js modal for UI consistency
-                        if (confirm(
-                            `${packageName} installed successfully!\n\n` +
-                            `The server must restart to load native extensions.\n\n` +
-                            `Restart now? (You'll reconnect automatically)`
-                        )) {
-                            await this.restartServerForChannel(channel);
-                        } else {
-                            this.showToast(
-                                `Installation complete. Restart server when ready.`,
-                                'info'
-                            );
-                        }
+                        // Show restart confirmation via Alpine.js modal
+                        this.showConfirm(
+                            `${packageName} Installed`,
+                            `The server must restart to load native extensions.\n\nRestart now? (You'll reconnect automatically)`,
+                            async () => { await this.restartServerForChannel(channel); },
+                            () => { this.showToast('Installation complete. Restart server when ready.', 'info'); }
+                        );
                         return;
                     } else {
                         this.showToast(`${this.installPrompt.package} installed!`, 'success');
@@ -628,46 +649,56 @@ window.PocketPaw.Channels = {
              * Remove a webhook slot
              */
             async removeWebhook(name) {
-                if (!confirm(`Remove webhook "${name}"?`)) return;
-                try {
-                    const res = await fetch('/api/webhooks/remove', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name })
-                    });
-                    const data = await res.json();
-                    if (data.status === 'ok') {
-                        this.showToast('Webhook removed', 'info');
-                        await this.loadWebhooks();
-                    } else {
-                        this.showToast(data.detail || 'Failed to remove', 'error');
+                this.showConfirm(
+                    'Remove Webhook',
+                    `Remove webhook "${name}"?`,
+                    async () => {
+                        try {
+                            const res = await fetch('/api/webhooks/remove', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name })
+                            });
+                            const data = await res.json();
+                            if (data.status === 'ok') {
+                                this.showToast('Webhook removed', 'info');
+                                await this.loadWebhooks();
+                            } else {
+                                this.showToast(data.detail || 'Failed to remove', 'error');
+                            }
+                        } catch (e) {
+                            this.showToast('Failed to remove webhook: ' + e.message, 'error');
+                        }
                     }
-                } catch (e) {
-                    this.showToast('Failed to remove webhook: ' + e.message, 'error');
-                }
+                );
             },
 
             /**
              * Regenerate a webhook slot's secret
              */
             async regenerateWebhookSecret(name) {
-                if (!confirm(`Regenerate secret for "${name}"? Existing integrations will break.`)) return;
-                try {
-                    const res = await fetch('/api/webhooks/regenerate-secret', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name })
-                    });
-                    const data = await res.json();
-                    if (data.status === 'ok') {
-                        this.showToast('Secret regenerated', 'success');
-                        await this.loadWebhooks();
-                    } else {
-                        this.showToast(data.detail || 'Failed to regenerate', 'error');
+                this.showConfirm(
+                    'Regenerate Secret',
+                    `Regenerate secret for "${name}"? Existing integrations will break.`,
+                    async () => {
+                        try {
+                            const res = await fetch('/api/webhooks/regenerate-secret', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name })
+                            });
+                            const data = await res.json();
+                            if (data.status === 'ok') {
+                                this.showToast('Secret regenerated', 'success');
+                                await this.loadWebhooks();
+                            } else {
+                                this.showToast(data.detail || 'Failed to regenerate', 'error');
+                            }
+                        } catch (e) {
+                            this.showToast('Failed to regenerate: ' + e.message, 'error');
+                        }
                     }
-                } catch (e) {
-                    this.showToast('Failed to regenerate: ' + e.message, 'error');
-                }
+                );
             },
 
             /**

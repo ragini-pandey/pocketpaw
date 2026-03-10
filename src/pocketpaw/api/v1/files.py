@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import mimetypes
+import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from pocketpaw.api.v1.schemas.files import (
     BrowseResponse,
@@ -16,6 +18,7 @@ from pocketpaw.api.v1.schemas.files import (
     OpenPathRequest,
     OpenPathResponse,
     RecentFilesResponse,
+    WriteFileRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -165,3 +168,102 @@ async def get_recent_files(limit: int = 20):
     tracker = get_recent_files_tracker()
     entries = tracker.get_recent(limit=min(limit, 50))
     return RecentFilesResponse(files=entries)
+
+
+def _resolve_path(path: str) -> Path:
+    """Resolve a path string to an absolute Path."""
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (Path.home() / path).resolve()
+
+
+@router.get("/files/download")
+async def download_file(path: str):
+    """Download a single file as an attachment."""
+    from pocketpaw.config import get_settings
+    from pocketpaw.tools.fetch import is_safe_path
+
+    settings = get_settings()
+    resolved = _resolve_path(path)
+    jail = settings.file_jail_path.resolve()
+
+    if not is_safe_path(resolved, jail):
+        raise HTTPException(status_code=403, detail="Access denied: path outside allowed directory")
+    if not resolved.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    if resolved.is_dir():
+        raise HTTPException(status_code=400, detail="Use /files/download-zip for directories")
+
+    mime, _ = mimetypes.guess_type(str(resolved))
+    if mime is None:
+        mime = "application/octet-stream"
+
+    return FileResponse(
+        str(resolved),
+        media_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="{resolved.name}"'},
+    )
+
+
+@router.get("/files/download-zip")
+async def download_dir_as_zip(path: str):
+    """Download a directory (recursively) as a zip archive."""
+    from pocketpaw.config import get_settings
+    from pocketpaw.tools.fetch import is_safe_path
+
+    settings = get_settings()
+    resolved = _resolve_path(path)
+    jail = settings.file_jail_path.resolve()
+
+    if not is_safe_path(resolved, jail):
+        raise HTTPException(status_code=403, detail="Access denied: path outside allowed directory")
+    if not resolved.exists():
+        raise HTTPException(status_code=404, detail="Path not found")
+    if not resolved.is_dir():
+        raise HTTPException(
+            status_code=400, detail="Not a directory — use /files/download for files"
+        )  # noqa: E501
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in sorted(resolved.rglob("*")):
+            if file_path.is_file() and not file_path.name.startswith("."):
+                try:
+                    zf.write(file_path, file_path.relative_to(resolved))
+                except PermissionError:
+                    logger.warning("Skipping unreadable file during zip: %s", file_path)
+    buf.seek(0)
+    zip_name = f"{resolved.name}.zip"
+    return StreamingResponse(
+        iter([buf.read()]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+    )
+
+
+@router.post("/files/write")
+async def write_file(req: WriteFileRequest):
+    """Overwrite a file's content. Only text files within the jail are permitted."""
+    from pocketpaw.config import get_settings
+    from pocketpaw.tools.fetch import is_safe_path
+
+    settings = get_settings()
+    resolved = _resolve_path(req.path)
+    jail = settings.file_jail_path.resolve()
+
+    if not is_safe_path(resolved, jail):
+        raise HTTPException(status_code=403, detail="Access denied: path outside allowed directory")
+    if resolved.is_dir():
+        raise HTTPException(status_code=400, detail="Cannot write to a directory")
+    if resolved.exists() and resolved.stat().st_size > _MAX_VIEWABLE_BYTES:
+        raise HTTPException(status_code=413, detail="File too large to edit via the browser")
+
+    try:
+        resolved.write_text(req.content, encoding="utf-8")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Write failed: {exc}") from exc
+
+    return {"ok": True}

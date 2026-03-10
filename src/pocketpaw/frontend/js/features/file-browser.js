@@ -29,10 +29,17 @@ window.PocketPaw.FileBrowser = {
             showFileViewer: false,
             viewerFileName: '',
             viewerFilePath: '',
-            viewerFileType: 'unknown', // 'pdf', 'image', 'text', 'unknown'
+            viewerFileType: 'unknown', // 'pdf', 'image', 'text', 'markdown', 'unknown', 'error'
             viewerContentUrl: '',
             viewerTextContent: '',
+            viewerHighlightedHtml: '', // hljs-processed HTML for code files
+            viewerMarkdownHtml: '',    // DOMPurify-sanitised rendered markdown
             viewerLoading: false,
+            // Inline editing
+            viewerEditMode: false,
+            viewerEditContent: '',
+            viewerOriginalContent: '',
+            viewerShowDiff: false,
         };
     },
 
@@ -179,8 +186,14 @@ window.PocketPaw.FileBrowser = {
                 this.viewerFileType = fileType;
                 this.viewerContentUrl = contentUrl;
                 this.viewerTextContent = '';
+                this.viewerHighlightedHtml = '';
+                this.viewerMarkdownHtml = '';
                 this.viewerLoading = true;
                 this.showFileViewer = true;
+                this.viewerEditMode = false;
+                this.viewerEditContent = '';
+                this.viewerOriginalContent = '';
+                this.viewerShowDiff = false;
 
                 if (fileType === 'text') {
                     try {
@@ -191,6 +204,18 @@ window.PocketPaw.FileBrowser = {
                             this.viewerFileType = 'error';
                         } else {
                             this.viewerTextContent = await resp.text();
+                            const ext = (fileName.split('.').pop() || '').toLowerCase();
+                            const isMarkdown = ext === 'md' || ext === 'markdown';
+                            if (isMarkdown) {
+                                this.viewerMarkdownHtml = DOMPurify.sanitize(
+                                    marked.parse(this.viewerTextContent)
+                                );
+                                this.viewerFileType = 'markdown';
+                            } else if (window.hljs) {
+                                const lang = hljs.getLanguage(ext) ? ext : 'plaintext';
+                                const result = hljs.highlight(this.viewerTextContent, { language: lang });
+                                this.viewerHighlightedHtml = result.value;
+                            }
                         }
                     } catch (e) {
                         this.viewerTextContent = `Error loading file: ${e.message}`;
@@ -208,7 +233,117 @@ window.PocketPaw.FileBrowser = {
             closeFileViewer() {
                 this.showFileViewer = false;
                 this.viewerTextContent = '';
+                this.viewerHighlightedHtml = '';
+                this.viewerMarkdownHtml = '';
                 this.viewerContentUrl = '';
+                this.viewerEditMode = false;
+                this.viewerEditContent = '';
+                this.viewerOriginalContent = '';
+                this.viewerShowDiff = false;
+            },
+
+            /**
+             * Trigger a browser download for a single file
+             */
+            downloadFile(filePath) {
+                const a = document.createElement('a');
+                a.href = `/api/v1/files/download?path=${encodeURIComponent(filePath)}`;
+                a.download = '';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            },
+
+            /**
+             * Trigger a zip download for a directory
+             */
+            downloadDirAsZip(dirPath) {
+                const a = document.createElement('a');
+                a.href = `/api/v1/files/download-zip?path=${encodeURIComponent(dirPath)}`;
+                a.download = '';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            },
+
+            /**
+             * Toggle inline editor mode for text files
+             */
+            toggleEditMode() {
+                if (!this.viewerEditMode) {
+                    this.viewerEditContent = this.viewerTextContent;
+                    this.viewerOriginalContent = this.viewerTextContent;
+                    this.viewerShowDiff = false;
+                }
+                this.viewerEditMode = !this.viewerEditMode;
+            },
+
+            /**
+             * Save edited file content back to the server
+             */
+            async saveFileEdits() {
+                try {
+                    const res = await fetch('/api/v1/files/write', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: this.viewerFilePath, content: this.viewerEditContent }),
+                    });
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        this.showToast(err.detail || 'Save failed', 'error');
+                        return;
+                    }
+                    this.viewerTextContent = this.viewerEditContent;
+                    this.viewerOriginalContent = this.viewerEditContent;
+                    // Re-apply highlighting after save
+                    const ext = (this.viewerFileName.split('.').pop() || '').toLowerCase();
+                    if ((ext === 'md' || ext === 'markdown')) {
+                        this.viewerMarkdownHtml = DOMPurify.sanitize(
+                            marked.parse(this.viewerTextContent)
+                        );
+                    } else if (window.hljs) {
+                        const lang = hljs.getLanguage(ext) ? ext : 'plaintext';
+                        this.viewerHighlightedHtml = hljs.highlight(this.viewerTextContent, { language: lang }).value;
+                    }
+                    this.viewerEditMode = false;
+                    this.viewerShowDiff = false;
+                    this.showToast('File saved', 'success');
+                } catch (e) {
+                    this.showToast('Save failed: ' + e.message, 'error');
+                }
+            },
+
+            /**
+             * Toggle diff view (original vs edited)
+             */
+            toggleDiffView() {
+                this.viewerShowDiff = !this.viewerShowDiff;
+            },
+
+            /**
+             * Compute a simple line-by-line diff between original and modified text.
+             * Returns an array of { type: 'same'|'added'|'removed', line: string, num: number }.
+             */
+            _computeDiff(original, modified) {
+                const origLines = original.split('\n');
+                const modLines = modified.split('\n');
+                const result = [];
+                const maxLen = Math.max(origLines.length, modLines.length);
+                for (let i = 0; i < maxLen; i++) {
+                    const o = origLines[i];
+                    const m = modLines[i];
+                    if (o === m) {
+                        result.push({ type: 'same', line: m ?? '', num: i + 1 });
+                    } else if (o === undefined) {
+                        result.push({ type: 'added', line: m, num: i + 1 });
+                    } else if (m === undefined) {
+                        result.push({ type: 'removed', line: o, num: i + 1 });
+                    } else {
+                        result.push({ type: 'removed', line: o, num: i + 1 });
+                        result.push({ type: 'added', line: m, num: i + 1 });
+                    }
+                }
+                return result;
             }
         };
     }
