@@ -44,8 +44,8 @@ def _fix_config_permissions() -> None:
     if config_path.exists():
         try:
             os.chmod(config_path, stat.S_IRUSR | stat.S_IWUSR)
-        except OSError:
-            pass  # Windows NTFS doesn't support Unix permissions
+        except OSError as exc:
+            logger.debug("Could not set config file permissions (expected on Windows): %s", exc)
 
 
 def _check_plaintext_api_keys() -> tuple[bool, str, bool]:
@@ -78,8 +78,8 @@ def _check_plaintext_api_keys() -> tuple[bool, str, bool]:
                 val = data.get(field)
                 if val:
                     found.append(field)
-            except Exception:
-                pass
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.debug("Could not parse config file for API key check: %s", exc)
 
     if found:
         return (
@@ -108,8 +108,8 @@ def _fix_audit_log() -> None:
         audit_path.touch()
     try:
         os.chmod(audit_path, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass  # Windows NTFS doesn't support Unix permissions
+    except OSError as exc:
+        logger.debug("Could not set audit log permissions (expected on Windows): %s", exc)
 
 
 def _check_guardian_reachable() -> tuple[bool, str, bool]:

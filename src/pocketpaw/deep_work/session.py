@@ -349,8 +349,8 @@ class DeepWorkSession:
                     traceback=traceback.format_exc(),
                     context={"project_id": project.id, "action": "planning"},
                 )
-            except Exception:
-                pass
+            except Exception as health_exc:  # noqa: BLE001
+                logger.debug("Could not record planning error to health engine: %s", health_exc)
             project.status = ProjectStatus.FAILED
             project.metadata["error"] = str(e)
             await self.manager.update_project(project)
@@ -541,8 +541,8 @@ class DeepWorkSession:
                     )
                 )
             )
-        except Exception:
-            pass  # Best effort
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Broadcast dw_planning_phase failed (best effort): %s", exc)
 
     def _broadcast_planning_complete(self, project: Project) -> None:
         """Broadcast a planning completion event for the frontend.
@@ -573,8 +573,8 @@ class DeepWorkSession:
                     )
                 )
             )
-        except Exception:
-            pass  # Best effort
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Broadcast dw_planning_complete failed (best effort): %s", exc)
 
     def _broadcast_cancel(self, project: Project) -> None:
         """Broadcast a project cancellation event for the frontend."""
@@ -597,8 +597,8 @@ class DeepWorkSession:
                     )
                 )
             )
-        except Exception:
-            pass  # Best effort
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Broadcast dw_project_cancelled failed (best effort): %s", exc)
 
     # =========================================================================
     # Internal helpers

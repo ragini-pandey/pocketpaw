@@ -10,12 +10,15 @@ Updated: 2026-02-10 - Channel-aware format hints
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from pocketpaw.bootstrap.default_provider import DefaultBootstrapProvider
 from pocketpaw.bootstrap.protocol import BootstrapProviderProtocol
 from pocketpaw.bus.events import Channel
 from pocketpaw.bus.format import CHANNEL_FORMAT_HINTS
 from pocketpaw.memory.manager import MemoryManager, get_memory_manager
+
+logger = logging.getLogger(__name__)
 
 
 class AgentContextBuilder:
@@ -139,7 +142,7 @@ class AgentContextBuilder:
             health_block = get_health_engine().get_health_prompt_section()
             if health_block:
                 parts.append(health_block)
-        except Exception:
-            pass  # Health engine failure never breaks prompt building
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Health engine failure (non-fatal, skipping health block): %s", exc)
 
         return "\n\n".join(parts)

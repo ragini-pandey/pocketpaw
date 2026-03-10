@@ -1082,8 +1082,8 @@ class ClaudeSDKBackend:
                     )
                     try:
                         await self._client.disconnect()
-                    except Exception:
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("Failed to disconnect client during cleanup: %s", exc)
                     self._client = None
                     self._client_options_key = None
 
