@@ -23,7 +23,12 @@ _identity_file_cache: dict[str, _IdentityCache] = {}
 
 
 def _read_identity_file(path: Path, strip: bool = False) -> str:
-    """Read an identity file; return cached content when mtime is unchanged."""
+    """Read an identity file; return cached content when mtime is unchanged.
+
+    Handles encoding gracefully (UTF-8 with replacement for non-UTF-8 bytes,
+    CRLF normalisation) and returns an empty string on any I/O error so
+    callers never crash when a file is missing or temporarily unreadable.
+    """
     try:
         mtime = path.stat().st_mtime
     except FileNotFoundError:
@@ -32,7 +37,11 @@ def _read_identity_file(path: Path, strip: bool = False) -> str:
     cached = _identity_file_cache.get(key)
     if cached and cached.mtime == mtime:
         return cached.content
-    raw = path.read_bytes()
+    try:
+        raw = path.read_bytes()
+    except Exception:
+        logger.warning("Failed to read identity file: %s", path)
+        return ""
     content = raw.decode("utf-8", errors="replace").replace("\r\n", "\n")
     if "\ufffd" in content:
         logger.warning("File %s contains non-UTF-8 bytes (replaced with placeholders)", path)
@@ -40,7 +49,6 @@ def _read_identity_file(path: Path, strip: bool = False) -> str:
         content = content.strip()
     _identity_file_cache[key] = _IdentityCache(content=content, mtime=mtime)
     return content
-
 
 _DEFAULT_INSTRUCTIONS = """\
 ## PocketPaw Tools (call via Bash)
@@ -180,6 +188,23 @@ class DefaultBootstrapProvider(BootstrapProviderProtocol):
         # Initialize default files if they don't exist
         self._ensure_defaults()
 
+        # Mtime-based cache — avoids redundant disk reads when files haven't changed
+        self._cache: BootstrapContext | None = None
+        self._cache_mtimes: dict[str, float] = {}
+
+    _IDENTITY_FILES = ("IDENTITY.md", "SOUL.md", "STYLE.md", "USER.md", "INSTRUCTIONS.md")
+
+    def _get_file_mtimes(self) -> dict[str, float]:
+        """Return a mtime mapping for every tracked identity file (0.0 if absent)."""
+        return {
+            name: (
+                (self.base_path / name).stat().st_mtime
+                if (self.base_path / name).exists()
+                else 0.0
+            )
+            for name in self._IDENTITY_FILES
+        }
+
     def _ensure_defaults(self) -> None:
         """Create default identity files if missing."""
         identity_file = self.base_path / "IDENTITY.md"
@@ -222,14 +247,25 @@ class DefaultBootstrapProvider(BootstrapProviderProtocol):
             instructions_file.write_text(_DEFAULT_INSTRUCTIONS, encoding="utf-8")
 
     async def get_context(self) -> BootstrapContext:
-        """Load context from files (mtime-cached to avoid redundant disk reads)."""
+        """Load context from files (mtime-cached to avoid redundant disk reads).
+
+        The instance-level cache is invalidated whenever any tracked identity
+        file's modification time changes, so edits made via the dashboard or CLI
+        are picked up on the very next message without requiring a restart.
+        Individual file reads are also mtime-cached at the module level by
+        _read_identity_file(), providing a fast path even across instances.
+        """
+        current_mtimes = self._get_file_mtimes()
+        if self._cache is not None and current_mtimes == self._cache_mtimes:
+            return self._cache
+
         identity = _read_identity_file(self.base_path / "IDENTITY.md")
         soul = _read_identity_file(self.base_path / "SOUL.md")
         style = _read_identity_file(self.base_path / "STYLE.md")
         user_profile = _read_identity_file(self.base_path / "USER.md", strip=True)
         instructions = _read_identity_file(self.base_path / "INSTRUCTIONS.md", strip=True)
 
-        return BootstrapContext(
+        ctx = BootstrapContext(
             name="PocketPaw",
             identity=identity,
             soul=soul,
@@ -237,3 +273,6 @@ class DefaultBootstrapProvider(BootstrapProviderProtocol):
             instructions=instructions,
             user_profile=user_profile,
         )
+        self._cache = ctx
+        self._cache_mtimes = current_mtimes
+        return ctx

@@ -20,8 +20,15 @@ class BootstrapContext:
     user_profile: str = ""  # USER.md content
 
     def to_system_prompt(self) -> str:
-        """Combine fields into a coherent system prompt."""
-        parts = [
+        """Combine fields into a coherent system prompt.
+
+        The identity block (name, soul, style) is wrapped in <identity> XML tags
+        so LLMs treat it as a high-priority directive even when many tool-instruction
+        lines follow.  Instructions (tool docs) appear *after* the identity block so
+        they don't push the personality far from the conversation.
+        """
+        # --- Identity block (XML-wrapped for emphasis) ---
+        identity_parts = [
             f"# Identity: {self.name}",
             self.identity,
             "\n# Core Philosophy (Soul)",
@@ -29,6 +36,7 @@ class BootstrapContext:
             "\n# Communication Style",
             self.style,
         ]
+        parts = ["<identity>", "\n".join(identity_parts), "</identity>"]
 
         if self.instructions:
             parts.append("\n# Instructions")
