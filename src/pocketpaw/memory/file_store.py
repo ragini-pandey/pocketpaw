@@ -11,12 +11,15 @@
 
 import asyncio
 import json
+import logging
 import re
 import uuid
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 from pocketpaw.memory.protocol import MemoryEntry, MemoryType
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_utc(dt: datetime) -> datetime:
@@ -626,8 +629,8 @@ class FileMemoryStore:
                 if session_file.exists():
                     try:
                         session_data = json.loads(session_file.read_text(encoding="utf-8"))
-                    except json.JSONDecodeError:
-                        pass
+                    except json.JSONDecodeError as exc:
+                        logger.warning("Discarding corrupt session file %s: %s", session_file, exc)
                 session_data.append(
                     {
                         "id": entry.id,
@@ -802,7 +805,8 @@ class FileMemoryStore:
                 )
                 for item in data
             ]
-        except (json.JSONDecodeError, KeyError):
+        except (json.JSONDecodeError, KeyError) as exc:
+            logger.warning("Could not parse session file %s: %s", session_file, exc)
             return []
 
     async def clear_session(self, session_key: str) -> int:
@@ -816,7 +820,8 @@ class FileMemoryStore:
                     count = len(data)
                     session_file.unlink()
                     return count
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as exc:
+                    logger.warning("Corrupt session file removed %s: %s", session_file, exc)
                     session_file.unlink()
                     return 0
             return 0

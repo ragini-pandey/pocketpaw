@@ -94,8 +94,8 @@ async def websocket_handler(
 
                 if get_api_key_manager().verify(t) is not None:
                     return True
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("API key verification failed: %s", exc)
         # Accept OAuth2 access tokens (ppat_* prefix)
         if t.startswith("ppat_"):
             try:
@@ -103,8 +103,8 @@ async def websocket_handler(
 
                 if get_oauth_server().verify_access_token(t) is not None:
                     return True
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("OAuth token verification failed: %s", exc)
         return False
 
     # Check HTTP-only session cookie

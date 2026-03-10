@@ -690,7 +690,7 @@ class ClaudeSDKBackend:
                             "an Anthropic API key.\n\n"
                             "**How to fix:**\n"
                             "1. Get an API key at "
-                            "[console.anthropic.com](https://console.anthropic.com/api-keys)\n"
+                            "[console.anthropic.com](https://console.anthropic.com/settings/keys)\n"
                             "2. Add it in **Settings > API Keys > Anthropic API Key**\n"
                             "3. Or set the `ANTHROPIC_API_KEY` environment variable\n\n"
                             "*Alternatively, switch to **Ollama (Local)** in Settings "
@@ -1082,8 +1082,8 @@ class ClaudeSDKBackend:
                     )
                     try:
                         await self._client.disconnect()
-                    except Exception:
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("Failed to disconnect client during cleanup: %s", exc)
                     self._client = None
                     self._client_options_key = None
 
