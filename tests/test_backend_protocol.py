@@ -2,7 +2,7 @@
 
 import inspect
 
-from pocketpaw.agents.backend import AgentBackend, BackendInfo, Capability, _DEFAULT_IDENTITY
+from pocketpaw.agents.backend import _DEFAULT_IDENTITY, AgentBackend, BackendInfo, Capability
 
 
 class TestDefaultIdentity:

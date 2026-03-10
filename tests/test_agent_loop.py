@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pocketpaw.agents.loop import AgentLoop, _IDENTITY_REINFORCE_THRESHOLD
+from pocketpaw.agents.loop import _IDENTITY_REINFORCE_THRESHOLD, AgentLoop
 from pocketpaw.agents.protocol import AgentEvent
 from pocketpaw.bus import Channel, InboundMessage
 
@@ -381,7 +381,9 @@ async def test_identity_reinforcement_appended_on_long_conversations(
     mock_router_cls.return_value = router
 
     mock_builder_instance = mock_builder_cls.return_value
-    mock_builder_instance.build_system_prompt = AsyncMock(return_value="<identity>You are PocketPaw</identity>")
+    mock_builder_instance.build_system_prompt = AsyncMock(
+        return_value="<identity>You are PocketPaw</identity>"
+    )
 
     # Simulate a long conversation with enough messages to trigger reinforcement
     long_history = [
@@ -443,7 +445,9 @@ async def test_identity_reinforcement_not_appended_on_short_conversations(
     mock_router_cls.return_value = router
 
     mock_builder_instance = mock_builder_cls.return_value
-    mock_builder_instance.build_system_prompt = AsyncMock(return_value="<identity>You are PocketPaw</identity>")
+    mock_builder_instance.build_system_prompt = AsyncMock(
+        return_value="<identity>You are PocketPaw</identity>"
+    )
 
     # Short history — below threshold
     short_history = [
