@@ -9,6 +9,7 @@ Extracted from dashboard.py — contains:
 
 import asyncio
 import logging
+import os
 from datetime import UTC
 
 import pocketpaw.dashboard_state as _state
@@ -161,6 +162,20 @@ async def startup_event(
         Callable for starting a channel adapter. Injected from dashboard.py
         to avoid circular import with dashboard_channels.
     """
+    # Ensure uv is on PATH (common install locations on all platforms)
+    _uv_paths = [
+        os.path.expanduser("~/.local/bin"),  # uv default (Linux/macOS)
+        os.path.expanduser("~/.cargo/bin"),  # cargo install
+        "/opt/homebrew/bin",                  # Homebrew on Apple Silicon
+        "/usr/local/bin",                     # Homebrew on Intel / system
+    ]
+    _current_path = os.environ.get("PATH", "")
+    _path_parts = _current_path.split(os.pathsep)
+    for _p in reversed(_uv_paths):
+        if _p not in _path_parts:
+            os.environ["PATH"] = _p + os.pathsep + os.environ.get("PATH", "")
+    logger.debug("PATH after uv injection: %s", os.environ["PATH"])
+
     # Start Message Bus Integration
     bus = get_message_bus()
     await ws_adapter.start(bus)
