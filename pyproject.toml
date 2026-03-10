@@ -1,7 +1,7 @@
-# Updated: 2026-03-08 — Bump version to 0.4.7.
+# Updated: 2026-03-10 — Bump version to 0.4.8.
 [project]
 name = "pocketpaw"
-version = "0.4.7"
+version = "0.4.8"
 description = "The AI agent that runs on your laptop, not a datacenter. OpenClaw alternative with one-command install."
 readme = "README.md"
 license = "MIT"
