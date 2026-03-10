@@ -243,6 +243,31 @@ window.PocketPaw.FileBrowser = {
             },
 
             /**
+             * Close the viewer and insert a reference to the file into the chat input.
+             * Navigates to the chat view if the hash router is active.
+             */
+            addFileToChat() {
+                const path = this.viewerFilePath;
+                const prefix = `Please read the file at ${path} and `;
+                this.inputText = prefix;
+                this.closeFileViewer();
+                this.showFileBrowser = false;
+                // Navigate to chat view via hash router if available
+                if (typeof window.navigateToView === 'function') {
+                    window.navigateToView('chat');
+                }
+                // Focus the chat input on the next tick so the view has rendered
+                this.$nextTick(() => {
+                    const input = this.$refs.chatInput;
+                    if (input) {
+                        input.focus();
+                        // Move cursor to end
+                        input.setSelectionRange(input.value.length, input.value.length);
+                    }
+                });
+            },
+
+            /**
              * Trigger a browser download for a single file
              */
             downloadFile(filePath) {

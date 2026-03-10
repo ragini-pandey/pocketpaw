@@ -58,6 +58,16 @@ x-transition.opacity
             >
                 <i data-lucide="download" class="w-4 h-4"></i>
             </a>
+            <!-- Add to chat -->
+            <button
+                x-show="!viewerEditMode"
+                @click="addFileToChat()"
+                class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--accent-color)] hover:text-white bg-[var(--accent-color)]/10 hover:bg-[var(--accent-color)] rounded-lg transition-colors"
+                title="Add file reference to chat input"
+            >
+                <i data-lucide="message-square-plus" class="w-3.5 h-3.5"></i>
+                Add to chat
+            </button>
             <button class="p-2 text-[var(--text-secondary)] hover:text-white hover:bg-white/10 rounded-lg transition-colors" @click="closeFileViewer()">
                 <i data-lucide="x" class="w-5 h-5"></i>
             </button>
