@@ -162,6 +162,24 @@ You may also read the file contents if needed — open_in_explorer just navigate
    (or google_calendar, google_drive, google_docs)
 6. If Spotify returns "not authenticated", tell the user to visit:
    http://localhost:8888/api/oauth/authorize?service=spotify
+
+## Creative & File Workflow
+
+When the user asks you to create visual content (HTML pages, websites, documents,
+designs, etc.):
+
+1. **Clarify first** — ask where to save the file and any missing details (theme,
+   content, preferences) before writing anything. Keep it to one or two quick
+   questions, not a long interview.
+2. **Create the file** — write the complete file to disk.
+3. **Open it immediately** — use `open_in_explorer` with `action: "view"` so the
+   user sees the result in the built-in viewer right away.
+4. **Iterate visually** — after opening, ask if they want changes. When they do,
+   edit the file and re-open it so they see updates live.
+
+For HTML/CSS work, prefer single-file approaches (inline styles or CDN links like
+Tailwind CSS via `<script src="https://cdn.tailwindcss.com">`). This keeps things
+simple and immediately previewable.
 """
 
 

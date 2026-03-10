@@ -75,7 +75,7 @@ class ClaudeSDKBackend:
             ],
             tool_policy_map=ClaudeSDKBackend._TOOL_POLICY_MAP,
             required_keys=["anthropic_api_key"],
-            supported_providers=["anthropic", "ollama", "openai_compatible"],
+            supported_providers=["anthropic", "ollama", "openrouter", "openai_compatible"],
         )
 
     def __init__(self, settings: Settings):
@@ -501,6 +501,23 @@ class ClaudeSDKBackend:
                         logger.info("Fast-path: stop flag set, breaking stream")
                         break
                     yield AgentEvent(type="message", content=text)
+
+                # Extract usage from the final message
+                final_msg = stream.get_final_message()
+                if final_msg and hasattr(final_msg, "usage") and final_msg.usage:
+                    u = final_msg.usage
+                    yield AgentEvent(
+                        type="token_usage",
+                        content="",
+                        metadata={
+                            "input_tokens": getattr(u, "input_tokens", 0),
+                            "output_tokens": getattr(u, "output_tokens", 0),
+                            "cached_input_tokens": getattr(u, "cache_read_input_tokens", 0)
+                            + getattr(u, "cache_creation_input_tokens", 0),
+                            "model": model,
+                            "backend": "claude_agent_sdk",
+                        },
+                    )
 
             yield AgentEvent(type="done", content="")
 
@@ -1019,6 +1036,28 @@ class ClaudeSDKBackend:
                         _saw_result = True
                         is_error = getattr(event, "is_error", False)
                         result = getattr(event, "result", "")
+
+                        # Extract token usage from ResultMessage
+                        # Per SDK docs: ResultMessage has total_cost_usd and usage dict
+                        total_cost = getattr(event, "total_cost_usd", None)
+                        usage = getattr(event, "usage", None) or {}
+                        if isinstance(usage, dict) and (usage or total_cost):
+                            _model_name = options_kwargs.get("model", "claude")
+                            yield AgentEvent(
+                                type="token_usage",
+                                content="",
+                                metadata={
+                                    "input_tokens": usage.get("input_tokens", 0),
+                                    "output_tokens": usage.get("output_tokens", 0),
+                                    "cached_input_tokens": usage.get("cache_read_input_tokens", 0)
+                                    + usage.get("cache_creation_input_tokens", 0),
+                                    "total_cost_usd": total_cost,
+                                    "model": _model_name
+                                    if isinstance(_model_name, str)
+                                    else "claude",
+                                    "backend": "claude_agent_sdk",
+                                },
+                            )
 
                         if is_error:
                             logger.error(f"ResultMessage error: {result}")
