@@ -2,6 +2,7 @@
 # Created: 2026-02-02
 
 
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -98,8 +99,9 @@ class TestShellTool:
     async def test_timeout(self):
         # Create tool with short timeout
         tool = ShellTool(timeout=1)
-        # Sleep for 2 seconds
-        result = await tool.execute(command="sleep 2")
+        # Use a cross-platform command that runs longer than the timeout
+        cmd = "ping -n 5 127.0.0.1" if sys.platform == "win32" else "sleep 2"
+        result = await tool.execute(command=cmd)
         assert "Command timed out" in result
 
 
