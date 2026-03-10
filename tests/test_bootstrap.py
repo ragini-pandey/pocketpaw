@@ -41,6 +41,40 @@ class TestBootstrapContext:
         assert "# Key Knowledge" in prompt
         assert "- Fact 1" in prompt
 
+    def test_to_system_prompt_has_identity_xml_tags(self):
+        """Identity block is wrapped in <identity> XML tags for LLM emphasis."""
+        ctx = BootstrapContext(
+            name="TestAgent",
+            identity="I am a test agent.",
+            soul="Soul text.",
+            style="Style text.",
+        )
+        prompt = ctx.to_system_prompt()
+        assert "<identity>" in prompt
+        assert "</identity>" in prompt
+        # Core identity content must be inside the XML block
+        open_tag = prompt.index("<identity>")
+        close_tag = prompt.index("</identity>")
+        identity_block = prompt[open_tag:close_tag]
+        assert "# Identity: TestAgent" in identity_block
+        assert "I am a test agent." in identity_block
+        assert "Soul text." in identity_block
+        assert "Style text." in identity_block
+
+    def test_instructions_outside_identity_xml_block(self):
+        """Instructions (tool docs) appear after the closing </identity> tag."""
+        ctx = BootstrapContext(
+            name="Agent",
+            identity="ID",
+            soul="Soul",
+            style="Style",
+            instructions="TOOL_DOCS_HERE",
+        )
+        prompt = ctx.to_system_prompt()
+        close_tag = prompt.index("</identity>")
+        instr_pos = prompt.index("TOOL_DOCS_HERE")
+        assert instr_pos > close_tag, "Instructions must come after </identity>"
+
 
 class TestDefaultBootstrapProvider:
     """Tests for DefaultBootstrapProvider."""
@@ -124,6 +158,47 @@ class TestDefaultBootstrapProvider:
 
         ctx = await provider.get_context()
         assert ctx.user_profile == ""
+
+    @pytest.mark.asyncio
+    async def test_mtime_cache_returns_same_object(self, temp_identity_path):
+        """Repeated get_context() calls with unchanged files return the same instance."""
+        provider = DefaultBootstrapProvider(base_path=temp_identity_path)
+        ctx1 = await provider.get_context()
+        ctx2 = await provider.get_context()
+        assert ctx1 is ctx2  # same object — instance-level cache hit
+
+    @pytest.mark.asyncio
+    async def test_mtime_cache_invalidated_on_file_change(self, temp_identity_path):
+        """Cache is invalidated when a file is modified."""
+        provider = DefaultBootstrapProvider(base_path=temp_identity_path)
+        ctx1 = await provider.get_context()
+
+        # Modify a file (bumps its mtime)
+        (temp_identity_path / "IDENTITY.md").write_text("Updated identity")
+
+        ctx2 = await provider.get_context()
+        assert ctx2 is not ctx1  # cache invalidated
+        assert ctx2.identity == "Updated identity"
+
+    @pytest.mark.asyncio
+    async def test_missing_file_returns_empty_string(self, temp_identity_path):
+        """A missing identity file yields an empty string rather than an exception."""
+        provider = DefaultBootstrapProvider(base_path=temp_identity_path)
+        # Remove a file that was just created by _ensure_defaults
+        (temp_identity_path / "SOUL.md").unlink()
+        ctx = await provider.get_context()
+        assert ctx.soul == ""
+
+    @pytest.mark.asyncio
+    async def test_unreadable_file_returns_empty_string(self, temp_identity_path):
+        """An unreadable file yields an empty string and logs a warning."""
+        import unittest.mock as mock
+
+        provider = DefaultBootstrapProvider(base_path=temp_identity_path)
+        # Force an OSError (e.g. permissions) on STYLE.md
+        with mock.patch("pathlib.Path.read_bytes", side_effect=OSError("permission denied")):
+            ctx = await provider.get_context()
+        assert ctx.style == ""
 
 
 class TestAgentContextBuilder:
