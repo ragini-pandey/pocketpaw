@@ -25,6 +25,11 @@ from pocketpaw.security.redact import redact_output
 
 logger = logging.getLogger(__name__)
 
+# Number of history messages (user + assistant turns) at which a compact
+# identity reminder is appended to the system prompt.  The reminder nudges
+# the model back toward the configured identity without a full re-injection.
+_IDENTITY_REINFORCE_THRESHOLD = 20
+
 # How long (seconds) a session lock must be idle before it is eligible for
 # garbage collection.  1 hour is generous enough to cover any in-flight work
 # while still bounding growth on long-running servers with many unique sessions.
@@ -424,7 +429,20 @@ class AgentLoop:
                 ),
             )
 
-            # 2b. Emit thinking event
+            # 2b. Periodic identity reinforcement for long conversations.
+            # When the session has accumulated many turns the model may start
+            # drifting from the identity defined in <identity> block.
+            # Appending a compact reminder keeps the agent on-character without
+            # a full re-injection (which would waste context window).
+            if len(history) >= _IDENTITY_REINFORCE_THRESHOLD:
+                system_prompt += (
+                    "\n\n# Identity Reminder\n"
+                    "Regardless of conversation length, you remain the agent described in the "
+                    "<identity> block above. Maintain your defined personality, tone, and "
+                    "communication style consistently throughout this conversation."
+                )
+
+            # 2c. Emit thinking event
             await self.bus.publish_system(
                 SystemEvent(event_type="thinking", data={"session_key": session_key})
             )
