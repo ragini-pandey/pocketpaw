@@ -39,6 +39,7 @@ _V1_ROUTERS: list[tuple[str, str, str]] = [
     ("pocketpaw.api.v1.telegram", "router", "Telegram"),
     ("pocketpaw.api.v1.events", "router", "Events"),
     ("pocketpaw.api.v1.kits", "router", "Kits"),
+    ("pocketpaw.api.v1.metrics", "router", "Metrics"),
 ]
 
 

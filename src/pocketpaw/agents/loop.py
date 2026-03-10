@@ -16,6 +16,7 @@ from pocketpaw.bus.commands import get_command_handler
 from pocketpaw.bus.events import Channel
 from pocketpaw.config import Settings, get_settings
 from pocketpaw.memory import get_memory_manager
+from pocketpaw.recent_files import get_recent_files_tracker
 from pocketpaw.security.injection_scanner import ThreatLevel, get_injection_scanner
 from pocketpaw.security.redact import redact_output
 
@@ -388,6 +389,21 @@ class AgentLoop:
                                 data={**meta, "session_key": session_key},
                             )
                         )
+                        # Persist to usage tracker
+                        try:
+                            from pocketpaw.usage_tracker import get_usage_tracker
+
+                            get_usage_tracker().record(
+                                backend=meta.get("backend", "unknown"),
+                                model=meta.get("model", ""),
+                                input_tokens=meta.get("input_tokens", 0),
+                                output_tokens=meta.get("output_tokens", 0),
+                                cached_input_tokens=meta.get("cached_input_tokens", 0),
+                                session_id=session_key or "",
+                                total_cost_usd=meta.get("total_cost_usd"),
+                            )
+                        except Exception:
+                            pass
 
                     elif etype == "tool_use":
                         tool_name = meta.get("name") or meta.get("tool", "unknown")
@@ -402,6 +418,14 @@ class AgentLoop:
                                 },
                             )
                         )
+
+                        # Track file paths for recent files
+                        try:
+                            get_recent_files_tracker().record_tool_use(
+                                tool_name, tool_input if isinstance(tool_input, dict) else {}
+                            )
+                        except Exception:
+                            pass
 
                         # AskUserQuestion — forward the question to the
                         # client so the user can see and answer it.

@@ -90,6 +90,9 @@ class _FakeStreamCM:
     async def __aexit__(self, *args):
         pass
 
+    def get_final_message(self):
+        return None
+
 
 class _FakeSDKClient:
     """Fake ClaudeSDKClient for testing the persistent client path."""
