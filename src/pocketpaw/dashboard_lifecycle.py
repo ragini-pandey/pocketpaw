@@ -166,8 +166,8 @@ async def startup_event(
     _uv_paths = [
         os.path.expanduser("~/.local/bin"),  # uv default (Linux/macOS)
         os.path.expanduser("~/.cargo/bin"),  # cargo install
-        "/opt/homebrew/bin",                  # Homebrew on Apple Silicon
-        "/usr/local/bin",                     # Homebrew on Intel / system
+        "/opt/homebrew/bin",  # Homebrew on Apple Silicon
+        "/usr/local/bin",  # Homebrew on Intel / system
     ]
     _current_path = os.environ.get("PATH", "")
     _path_parts = _current_path.split(os.pathsep)
