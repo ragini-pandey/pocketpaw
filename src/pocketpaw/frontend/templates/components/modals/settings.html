@@ -282,7 +282,7 @@
               <div class="flex flex-col gap-1.5">
                 <div class="flex justify-between items-center">
                   <label class="text-[11px] text-white/60">Anthropic API Key</label>
-                  <a href="https://console.anthropic.com/api-keys" target="_blank" rel="noopener" class="api-key-help">
+                  <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" class="api-key-help">
                     <i data-lucide="external-link" class="w-3 h-3"></i> Get Key
                   </a>
                 </div>
@@ -767,7 +767,7 @@
             <div class="flex justify-between items-center">
               <label class="text-[12px] font-medium text-[var(--text-secondary)] uppercase tracking-wide">Anthropic API Key</label>
               <div class="flex items-center gap-2">
-                <a href="https://console.anthropic.com/api-keys" target="_blank" rel="noopener" class="api-key-help">
+                <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" class="api-key-help">
                   <i data-lucide="external-link" class="w-3 h-3"></i> Get Key
                 </a>
                 <span x-show="hasAnthropicKey" class="text-[11px] font-medium text-[var(--success-color)] flex items-center gap-1">
@@ -783,7 +783,7 @@
               <button class="bg-[var(--accent-color)] hover:bg-[var(--accent-hover)] text-white px-3.5 py-2 rounded-[8px] text-[12px] font-semibold transition-all active:scale-95"
                 @click="saveApiKey('anthropic')">Save</button>
             </div>
-            <small class="text-white/50 text-[11px]">Required for Claude SDK backend — get a key at <a href="https://console.anthropic.com/api-keys" target="_blank" rel="noopener" class="underline hover:text-white/70">console.anthropic.com</a></small>
+            <small class="text-white/50 text-[11px]">Required for Claude SDK backend — get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" class="underline hover:text-white/70">console.anthropic.com</a></small>
           </div>
 
           <!-- OpenAI key: OpenAI Agents + OpenAI provider -->
@@ -1457,6 +1457,101 @@
                 <span class="text-[11px] text-white/50 mt-0.5"
                   >Use a secondary LLM to analyze suspicious content (requires
                   API key)</span
+                >
+              </div>
+            </label>
+          </div>
+
+          <!-- PII Protection -->
+          <div class="mt-4">
+            <label class="flex items-start gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                x-model="settings.piiScanEnabled"
+                @change="saveSettings()"
+                class="mt-0.5 accent-[var(--accent-color)] w-4 h-4"
+              />
+              <div class="flex flex-col">
+                <span
+                  class="text-[13px] font-medium group-hover:text-white transition-colors"
+                  >PII Protection</span
+                >
+                <span class="text-[11px] text-white/50 mt-0.5"
+                  >Detect and mask sensitive data (SSN, email, phone, credit card) before storing</span
+                >
+              </div>
+            </label>
+          </div>
+
+          <!-- PII sub-options -->
+          <div class="pl-7 space-y-3" x-show="settings.piiScanEnabled" x-transition>
+            <!-- Default Action -->
+            <div class="flex items-center gap-2">
+              <span class="text-[12px] text-white/50 w-20 shrink-0">Action:</span>
+              <select
+                x-model="settings.piiDefaultAction"
+                @change="saveSettings()"
+                class="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-[12px] text-white/80 w-full max-w-[160px]"
+              >
+                <option value="mask">Mask ([REDACTED])</option>
+                <option value="hash">Hash (SHA256)</option>
+                <option value="log">Log only</option>
+              </select>
+            </div>
+
+            <!-- Scan Memory -->
+            <label class="flex items-start gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                x-model="settings.piiScanMemory"
+                @change="saveSettings()"
+                class="mt-0.5 accent-[var(--accent-color)] w-4 h-4"
+              />
+              <div class="flex flex-col">
+                <span
+                  class="text-[13px] font-medium group-hover:text-white transition-colors"
+                  >Scan Memory</span
+                >
+                <span class="text-[11px] text-white/50 mt-0.5"
+                  >Mask PII before writing to session history and long-term memory</span
+                >
+              </div>
+            </label>
+
+            <!-- Scan Audit Log -->
+            <label class="flex items-start gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                x-model="settings.piiScanAudit"
+                @change="saveSettings()"
+                class="mt-0.5 accent-[var(--accent-color)] w-4 h-4"
+              />
+              <div class="flex flex-col">
+                <span
+                  class="text-[13px] font-medium group-hover:text-white transition-colors"
+                  >Scan Audit Log</span
+                >
+                <span class="text-[11px] text-white/50 mt-0.5"
+                  >Mask PII in audit log entries</span
+                >
+              </div>
+            </label>
+
+            <!-- Scan Logs -->
+            <label class="flex items-start gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                x-model="settings.piiScanLogs"
+                @change="saveSettings()"
+                class="mt-0.5 accent-[var(--accent-color)] w-4 h-4"
+              />
+              <div class="flex flex-col">
+                <span
+                  class="text-[13px] font-medium group-hover:text-white transition-colors"
+                  >Scan Log Output</span
+                >
+                <span class="text-[11px] text-white/50 mt-0.5"
+                  >Scrub PII patterns from application log output</span
                 >
               </div>
             </label>
