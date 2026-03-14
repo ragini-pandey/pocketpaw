@@ -88,6 +88,9 @@ google-adk = [
 copilot-sdk = [
     "github-copilot-sdk>=0.1.0",
 ]
+litellm = [
+    "litellm>=1.40.0",
+]
 memory = [
     "mem0ai>=0.1.115",
     "ollama>=0.6.1",
@@ -194,12 +197,7 @@ all-tools = [
     "ollama>=0.6.1",
 ]
 all-backends = [
-    # openai-agents
-    "openai-agents>=0.2.0",
-    # google-adk
-    "google-adk>=1.0.0",
-    # copilot-sdk
-    "github-copilot-sdk>=0.1.0",
+    "pocketpaw[openai-agents,google-adk,copilot-sdk,litellm]",
 ]
 all = [
     # browser
