@@ -22,6 +22,18 @@ def client(test_app):
     return TestClient(test_app)
 
 
+@pytest.fixture(autouse=True)
+def _allow_auth_rate_limiter():
+    """Allow all requests through the auth rate limiter by default.
+
+    Individual tests in TestAuthRateLimiting override this with their own
+    @patch to exercise the 429 path.
+    """
+    with patch("pocketpaw.security.rate_limiter.auth_limiter") as mock:
+        mock.allow.return_value = True
+        yield mock
+
+
 MASTER_TOKEN = "test-master-token-123"
 
 
@@ -74,9 +86,7 @@ class TestCookieLogin:
         resp = client.post("/api/v1/auth/login", json={"token": "wrong"})
         assert resp.status_code == 401
 
-    @patch("pocketpaw.security.rate_limiter.auth_limiter")
-    def test_login_invalid_json(self, mock_limiter, client):
-        mock_limiter.allow.return_value = True
+    def test_login_invalid_json(self, client):
         resp = client.post(
             "/api/v1/auth/login",
             content=b"not-json",
@@ -108,24 +118,20 @@ class TestTokenRegenerate:
 class TestQRCode:
     """Tests for GET /api/v1/qr."""
 
-    @patch("pocketpaw.security.rate_limiter.auth_limiter")
     @patch("pocketpaw.config.get_access_token", return_value=MASTER_TOKEN)
     @patch("pocketpaw.security.session_tokens.create_session_token", return_value="qr-token")
     @patch("pocketpaw.tunnel.get_tunnel_manager")
-    def test_qr_returns_png(self, mock_tunnel, mock_create, mock_get, mock_limiter, client):
-        mock_limiter.allow.return_value = True
+    def test_qr_returns_png(self, mock_tunnel, mock_create, mock_get, client):
         mock_tunnel.return_value.get_status.return_value = {"active": False}
         resp = client.get("/api/v1/qr")
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "image/png"
         assert len(resp.content) > 100
 
-    @patch("pocketpaw.security.rate_limiter.auth_limiter")
     @patch("pocketpaw.config.get_access_token", return_value=MASTER_TOKEN)
     @patch("pocketpaw.security.session_tokens.create_session_token", return_value="qr-token")
     @patch("pocketpaw.tunnel.get_tunnel_manager")
-    def test_qr_with_active_tunnel(self, mock_tunnel, mock_create, mock_get, mock_limiter, client):
-        mock_limiter.allow.return_value = True
+    def test_qr_with_active_tunnel(self, mock_tunnel, mock_create, mock_get, client):
         mock_tunnel.return_value.get_status.return_value = {
             "active": True,
             "url": "https://test.trycloudflare.com",
@@ -198,12 +204,8 @@ class TestAuthRateLimiting:
     @patch("pocketpaw.config.get_access_token", return_value=MASTER_TOKEN)
     @patch("pocketpaw.config.Settings.load")
     @patch("pocketpaw.security.session_tokens.create_session_token", return_value="sess:abc")
-    @patch("pocketpaw.security.rate_limiter.auth_limiter")
-    def test_session_allowed_when_not_rate_limited(
-        self, mock_limiter, mock_create, mock_load, mock_get, client
-    ):
+    def test_session_allowed_when_not_rate_limited(self, mock_create, mock_load, mock_get, client):
         """POST /auth/session proceeds normally when rate limit allows the request."""
-        mock_limiter.allow.return_value = True
         mock_load.return_value = MagicMock(session_token_ttl_hours=24)
         resp = client.post(
             "/api/v1/auth/session",
@@ -214,12 +216,8 @@ class TestAuthRateLimiting:
     @patch("pocketpaw.config.get_access_token", return_value=MASTER_TOKEN)
     @patch("pocketpaw.config.Settings.load")
     @patch("pocketpaw.security.session_tokens.create_session_token", return_value="sess:xyz")
-    @patch("pocketpaw.security.rate_limiter.auth_limiter")
-    def test_login_allowed_when_not_rate_limited(
-        self, mock_limiter, mock_create, mock_load, mock_get, client
-    ):
+    def test_login_allowed_when_not_rate_limited(self, mock_create, mock_load, mock_get, client):
         """POST /auth/login proceeds normally when rate limit allows the request."""
-        mock_limiter.allow.return_value = True
         mock_load.return_value = MagicMock(session_token_ttl_hours=24)
         resp = client.post("/api/v1/auth/login", json={"token": MASTER_TOKEN})
         assert resp.status_code == 200
