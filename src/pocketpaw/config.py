@@ -378,13 +378,13 @@ class Settings(BaseSettings):
 
     # Session History Compaction
     compaction_recent_window: int = Field(
-        default=10, description="Number of recent messages to keep verbatim"
+        default=10, gt=0, description="Number of recent messages to keep verbatim"
     )
     compaction_char_budget: int = Field(
-        default=8000, description="Max total chars for compacted history"
+        default=8000, gt=0, description="Max total chars for compacted history"
     )
     compaction_summary_chars: int = Field(
-        default=150, description="Max chars per older message one-liner extract"
+        default=150, gt=0, description="Max chars per older message one-liner extract"
     )
     compaction_llm_summarize: bool = Field(
         default=False, description="Use Haiku to summarize older messages (opt-in)"
@@ -486,7 +486,9 @@ class Settings(BaseSettings):
         description="Allow unauthenticated localhost access (disable for non-CF proxies)",
     )
     session_token_ttl_hours: int = Field(
-        default=24, description="TTL in hours for HMAC session tokens issued via /api/auth/session"
+        default=24,
+        gt=0,
+        description="TTL in hours for HMAC session tokens issued via /api/auth/session",
     )
     api_cors_allowed_origins: list[str] = Field(
         default_factory=list,
@@ -494,6 +496,7 @@ class Settings(BaseSettings):
     )
     api_rate_limit_per_key: int = Field(
         default=60,
+        gt=0,
         description="Max requests per minute per API key (token-bucket capacity)",
     )
     file_jail_path: Path = Field(
@@ -713,7 +716,7 @@ class Settings(BaseSettings):
         default="", description="Custom media download dir (default: ~/.pocketpaw/media/)"
     )
     media_max_file_size_mb: int = Field(
-        default=50, description="Max media file size in MB (0 = unlimited)"
+        default=50, ge=0, description="Max media file size in MB (0 = unlimited)"
     )
 
     # UX
@@ -730,7 +733,7 @@ class Settings(BaseSettings):
 
     # Concurrency
     max_concurrent_conversations: int = Field(
-        default=5, description="Max parallel conversations processed simultaneously"
+        default=5, gt=0, description="Max parallel conversations processed simultaneously"
     )
 
     def save(self) -> None:
