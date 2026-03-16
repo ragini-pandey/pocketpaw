@@ -700,6 +700,53 @@ class Settings(BaseSettings):
         default="",
         description="Global owner identifier (e.g. Telegram user ID). Empty = single-user mode.",
     )
+
+    # Soul Protocol
+    soul_enabled: bool = Field(
+        default=False,
+        description="Enable soul-protocol for persistent AI identity, memory, and emotion",
+    )
+    soul_name: str = Field(
+        default="Paw",
+        description="Name for the soul identity",
+    )
+    soul_archetype: str = Field(
+        default="The Helpful Assistant",
+        description="Soul archetype (e.g. 'The Coding Expert', 'The Compassionate Creator')",
+    )
+    soul_persona: str = Field(
+        default="",
+        description="Custom persona description for the soul (empty = auto-generated)",
+    )
+    # TODO: soul_values and soul_ocean are not yet exposed in the dashboard UI.
+    #  Add controls in a Soul settings tab when the UI is built out.
+    soul_values: list[str] = Field(
+        default_factory=lambda: ["helpfulness", "precision", "privacy"],
+        description="Core values for the soul identity",
+    )
+    soul_ocean: dict[str, float] = Field(
+        default_factory=lambda: {
+            "openness": 0.7,
+            "conscientiousness": 0.85,
+            "extraversion": 0.5,
+            "agreeableness": 0.8,
+            "neuroticism": 0.2,
+        },
+        description="OCEAN Big Five personality traits (0.0-1.0)",
+    )
+    soul_communication: dict[str, str] = Field(
+        default_factory=lambda: {"warmth": "medium", "verbosity": "low"},
+        description="Communication style settings for the soul",
+    )
+    soul_path: str = Field(
+        default="",
+        description="Path to .soul file (empty = ~/.pocketpaw/soul/)",
+    )
+    soul_auto_save_interval: int = Field(
+        default=300,
+        description="Auto-save soul state interval in seconds (0 = disabled)",
+    )
+
     notification_channels: list[str] = Field(
         default_factory=list,
         description="Targets for autonomous messages, e.g. ['telegram:12345', 'discord:98765']",

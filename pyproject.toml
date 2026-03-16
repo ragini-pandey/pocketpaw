@@ -95,6 +95,9 @@ memory = [
     "mem0ai>=0.1.115",
     "ollama>=0.6.1",
 ]
+soul = [
+    "soul-protocol[engine]>=0.2.3",
+]
 
 # --- Channel extras ---
 discord = [
@@ -195,6 +198,8 @@ all-tools = [
     # memory
     "mem0ai>=0.1.115",
     "ollama>=0.6.1",
+    # soul
+    "soul-protocol[engine]>=0.2.3",
 ]
 all-backends = [
     "pocketpaw[openai-agents,google-adk,copilot-sdk,litellm]",
@@ -225,6 +230,8 @@ all = [
     "pytesseract>=0.3.10",
     "sarvamai>=0.1.25",
     "mcp>=1.0.0",
+    # soul
+    "soul-protocol[engine]>=0.2.3",
     # backends
     "openai-agents>=0.2.0",
     "google-adk>=1.0.0",
