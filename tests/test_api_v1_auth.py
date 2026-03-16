@@ -74,7 +74,9 @@ class TestCookieLogin:
         resp = client.post("/api/v1/auth/login", json={"token": "wrong"})
         assert resp.status_code == 401
 
-    def test_login_invalid_json(self, client):
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
+    def test_login_invalid_json(self, mock_limiter, client):
+        mock_limiter.allow.return_value = True
         resp = client.post(
             "/api/v1/auth/login",
             content=b"not-json",
@@ -106,20 +108,24 @@ class TestTokenRegenerate:
 class TestQRCode:
     """Tests for GET /api/v1/qr."""
 
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
     @patch("pocketpaw.config.get_access_token", return_value=MASTER_TOKEN)
     @patch("pocketpaw.security.session_tokens.create_session_token", return_value="qr-token")
     @patch("pocketpaw.tunnel.get_tunnel_manager")
-    def test_qr_returns_png(self, mock_tunnel, mock_create, mock_get, client):
+    def test_qr_returns_png(self, mock_tunnel, mock_create, mock_get, mock_limiter, client):
+        mock_limiter.allow.return_value = True
         mock_tunnel.return_value.get_status.return_value = {"active": False}
         resp = client.get("/api/v1/qr")
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "image/png"
         assert len(resp.content) > 100
 
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
     @patch("pocketpaw.config.get_access_token", return_value=MASTER_TOKEN)
     @patch("pocketpaw.security.session_tokens.create_session_token", return_value="qr-token")
     @patch("pocketpaw.tunnel.get_tunnel_manager")
-    def test_qr_with_active_tunnel(self, mock_tunnel, mock_create, mock_get, client):
+    def test_qr_with_active_tunnel(self, mock_tunnel, mock_create, mock_get, mock_limiter, client):
+        mock_limiter.allow.return_value = True
         mock_tunnel.return_value.get_status.return_value = {
             "active": True,
             "url": "https://test.trycloudflare.com",
@@ -127,3 +133,93 @@ class TestQRCode:
         resp = client.get("/api/v1/qr")
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "image/png"
+
+
+class TestAuthRateLimiting:
+    """Tests for rate limiting on auth endpoints (issue #628).
+
+    auth_limiter is imported lazily inside each handler, so we patch
+    ``pocketpaw.security.rate_limiter.auth_limiter`` — the object that the
+    lazy ``from pocketpaw.security.rate_limiter import auth_limiter``
+    resolves to at call time.
+    """
+
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
+    def test_session_endpoint_rate_limited(self, mock_limiter, client):
+        """POST /auth/session returns 429 when rate limit is exceeded."""
+        mock_limiter.allow.return_value = False
+        resp = client.post(
+            "/api/v1/auth/session",
+            headers={"Authorization": "Bearer any-token"},
+        )
+        assert resp.status_code == 429
+        assert resp.json()["detail"] == "Too many requests"
+
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
+    def test_session_endpoint_passes_ip_to_limiter(self, mock_limiter, client):
+        """POST /auth/session passes client IP to auth_limiter.allow()."""
+        mock_limiter.allow.return_value = False
+        client.post(
+            "/api/v1/auth/session",
+            headers={"Authorization": "Bearer any-token"},
+        )
+        mock_limiter.allow.assert_called_once()
+
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
+    def test_login_endpoint_rate_limited(self, mock_limiter, client):
+        """POST /auth/login returns 429 when rate limit is exceeded."""
+        mock_limiter.allow.return_value = False
+        resp = client.post("/api/v1/auth/login", json={"token": "any-token"})
+        assert resp.status_code == 429
+        assert resp.json()["detail"] == "Too many requests"
+
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
+    def test_login_endpoint_passes_ip_to_limiter(self, mock_limiter, client):
+        """POST /auth/login passes client IP to auth_limiter.allow()."""
+        mock_limiter.allow.return_value = False
+        client.post("/api/v1/auth/login", json={"token": "any-token"})
+        mock_limiter.allow.assert_called_once()
+
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
+    def test_qr_endpoint_rate_limited(self, mock_limiter, client):
+        """GET /qr returns 429 when rate limit is exceeded."""
+        mock_limiter.allow.return_value = False
+        resp = client.get("/api/v1/qr")
+        assert resp.status_code == 429
+        assert resp.json()["detail"] == "Too many requests"
+
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
+    def test_qr_endpoint_passes_ip_to_limiter(self, mock_limiter, client):
+        """GET /qr passes client IP to auth_limiter.allow()."""
+        mock_limiter.allow.return_value = False
+        client.get("/api/v1/qr")
+        mock_limiter.allow.assert_called_once()
+
+    @patch("pocketpaw.config.get_access_token", return_value=MASTER_TOKEN)
+    @patch("pocketpaw.config.Settings.load")
+    @patch("pocketpaw.security.session_tokens.create_session_token", return_value="sess:abc")
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
+    def test_session_allowed_when_not_rate_limited(
+        self, mock_limiter, mock_create, mock_load, mock_get, client
+    ):
+        """POST /auth/session proceeds normally when rate limit allows the request."""
+        mock_limiter.allow.return_value = True
+        mock_load.return_value = MagicMock(session_token_ttl_hours=24)
+        resp = client.post(
+            "/api/v1/auth/session",
+            headers={"Authorization": f"Bearer {MASTER_TOKEN}"},
+        )
+        assert resp.status_code == 200
+
+    @patch("pocketpaw.config.get_access_token", return_value=MASTER_TOKEN)
+    @patch("pocketpaw.config.Settings.load")
+    @patch("pocketpaw.security.session_tokens.create_session_token", return_value="sess:xyz")
+    @patch("pocketpaw.security.rate_limiter.auth_limiter")
+    def test_login_allowed_when_not_rate_limited(
+        self, mock_limiter, mock_create, mock_load, mock_get, client
+    ):
+        """POST /auth/login proceeds normally when rate limit allows the request."""
+        mock_limiter.allow.return_value = True
+        mock_load.return_value = MagicMock(session_token_ttl_hours=24)
+        resp = client.post("/api/v1/auth/login", json={"token": MASTER_TOKEN})
+        assert resp.status_code == 200
