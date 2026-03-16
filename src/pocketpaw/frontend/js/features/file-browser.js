@@ -162,15 +162,42 @@ window.PocketPaw.FileBrowser = {
             _detectFileType(filename) {
                 const ext = (filename.split('.').pop() || '').toLowerCase();
                 if (ext === 'pdf') return 'pdf';
-                if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico'].includes(ext)) return 'image';
-                if ([
+                const imageExts = [
+                    'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico',
+                ];
+                if (imageExts.includes(ext)) return 'image';
+                const textExts = [
                     'txt', 'md', 'py', 'js', 'ts', 'json', 'html', 'css',
                     'yaml', 'yml', 'toml', 'cfg', 'ini', 'log', 'sh', 'bat',
                     'xml', 'csv', 'env', 'rs', 'go', 'java', 'c', 'cpp', 'h',
                     'jsx', 'tsx', 'svelte', 'vue', 'rb', 'php', 'sql', 'r',
                     'swift', 'kt', 'lua', 'pl', 'dockerfile', 'makefile',
-                ].includes(ext)) return 'text';
+                ];
+                if (textExts.includes(ext)) return 'text';
                 return 'unknown';
+            },
+
+            /**
+             * Apply syntax highlighting or markdown rendering to the
+             * current viewerTextContent based on the file extension.
+             * Shared by openFileViewer() and saveFileEdits().
+             */
+            _applyHighlighting() {
+                const ext = (this.viewerFileName.split('.').pop() || '')
+                    .toLowerCase();
+                const isMarkdown = ext === 'md' || ext === 'markdown';
+                if (isMarkdown) {
+                    this.viewerMarkdownHtml = DOMPurify.sanitize(
+                        marked.parse(this.viewerTextContent),
+                    );
+                    this.viewerFileType = 'markdown';
+                } else if (window.hljs) {
+                    const lang = hljs.getLanguage(ext)
+                        ? ext : 'plaintext';
+                    this.viewerHighlightedHtml = hljs.highlight(
+                        this.viewerTextContent, { language: lang },
+                    ).value;
+                }
             },
 
             /**
@@ -204,18 +231,7 @@ window.PocketPaw.FileBrowser = {
                             this.viewerFileType = 'error';
                         } else {
                             this.viewerTextContent = await resp.text();
-                            const ext = (fileName.split('.').pop() || '').toLowerCase();
-                            const isMarkdown = ext === 'md' || ext === 'markdown';
-                            if (isMarkdown) {
-                                this.viewerMarkdownHtml = DOMPurify.sanitize(
-                                    marked.parse(this.viewerTextContent)
-                                );
-                                this.viewerFileType = 'markdown';
-                            } else if (window.hljs) {
-                                const lang = hljs.getLanguage(ext) ? ext : 'plaintext';
-                                const result = hljs.highlight(this.viewerTextContent, { language: lang });
-                                this.viewerHighlightedHtml = result.value;
-                            }
+                            this._applyHighlighting();
                         }
                     } catch (e) {
                         this.viewerTextContent = `Error loading file: ${e.message}`;
@@ -311,7 +327,10 @@ window.PocketPaw.FileBrowser = {
                     const res = await fetch('/api/v1/files/write', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: this.viewerFilePath, content: this.viewerEditContent }),
+                        body: JSON.stringify({
+                            path: this.viewerFilePath,
+                            content: this.viewerEditContent,
+                        }),
                     });
                     if (!res.ok) {
                         const err = await res.json().catch(() => ({}));
@@ -321,15 +340,7 @@ window.PocketPaw.FileBrowser = {
                     this.viewerTextContent = this.viewerEditContent;
                     this.viewerOriginalContent = this.viewerEditContent;
                     // Re-apply highlighting after save
-                    const ext = (this.viewerFileName.split('.').pop() || '').toLowerCase();
-                    if ((ext === 'md' || ext === 'markdown')) {
-                        this.viewerMarkdownHtml = DOMPurify.sanitize(
-                            marked.parse(this.viewerTextContent)
-                        );
-                    } else if (window.hljs) {
-                        const lang = hljs.getLanguage(ext) ? ext : 'plaintext';
-                        this.viewerHighlightedHtml = hljs.highlight(this.viewerTextContent, { language: lang }).value;
-                    }
+                    this._applyHighlighting();
                     this.viewerEditMode = false;
                     this.viewerShowDiff = false;
                     this.showToast('File saved', 'success');
