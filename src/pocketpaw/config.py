@@ -1,6 +1,7 @@
 """Configuration management for PocketPaw.
 
 Changes:
+  - 2026-03-16: Use Literal types for whatsapp_mode, tts_provider, stt_provider (#638).
   - 2026-02-17: Added health_check_on_startup field for Health Engine.
   - 2026-02-14: Add migration warning for old ~/.pocketclaw/ config dir and POCKETCLAW_ env vars.
   - 2026-02-06: Secrets stored encrypted via CredentialStore; auto-migrate plaintext keys.
@@ -10,11 +11,14 @@ Changes:
   - 2026-02-02: claude_agent_sdk is now RECOMMENDED (uses official SDK).
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -147,7 +151,7 @@ def get_token_path() -> Path:
 _TELEGRAM_BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]+$")
 
 
-def validate_api_keys(settings: "Settings") -> list[str]:
+def validate_api_keys(settings: Settings) -> list[str]:
     """Validate **all** API keys on a :class:`Settings` instance (batch, loose).
 
     Uses simple prefix checks (not the strict regexes in :func:`validate_api_key`)
@@ -439,7 +443,7 @@ class Settings(BaseSettings):
     )
 
     # WhatsApp
-    whatsapp_mode: str = Field(
+    whatsapp_mode: Literal["", "personal", "business"] = Field(
         default="",
         description="WhatsApp mode: 'personal' (QR scan via neonize) or 'business' (Cloud API)",
     )
@@ -596,14 +600,16 @@ class Settings(BaseSettings):
     )
 
     # Voice/TTS
-    tts_provider: str = Field(
+    tts_provider: Literal["openai", "elevenlabs", "sarvam"] = Field(
         default="openai", description="TTS provider: 'openai', 'elevenlabs', or 'sarvam'"
     )
     elevenlabs_api_key: str | None = Field(default=None, description="ElevenLabs API key for TTS")
     tts_voice: str = Field(
         default="alloy", description="TTS voice name (OpenAI: alloy/echo/fable/onyx/nova/shimmer)"
     )
-    stt_provider: str = Field(default="openai", description="STT provider: 'openai' or 'sarvam'")
+    stt_provider: Literal["openai", "sarvam"] = Field(
+        default="openai", description="STT provider: 'openai' or 'sarvam'"
+    )
     stt_model: str = Field(default="whisper-1", description="OpenAI Whisper model for STT")
 
     # OCR
@@ -828,7 +834,7 @@ class Settings(BaseSettings):
         _chmod_safe(config_path, 0o600)
 
     @classmethod
-    def load(cls) -> "Settings":
+    def load(cls) -> Settings:
         """Load settings from config file + encrypted credential store."""
         from pocketpaw.credentials import SECRET_FIELDS, get_credential_store
 

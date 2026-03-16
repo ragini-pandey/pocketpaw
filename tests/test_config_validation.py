@@ -292,3 +292,86 @@ class TestNumericFieldConstraints:
         """max_concurrent_conversations=1 must be accepted."""
         s = Settings(max_concurrent_conversations=1)
         assert s.max_concurrent_conversations == 1
+
+
+class TestEnumFieldValidation:
+    """Tests for Literal-typed enum fields in Settings (issue #638).
+
+    Covers whatsapp_mode, tts_provider, and stt_provider.
+    """
+
+    # ─── whatsapp_mode ──────────────────────────────────────────────────────
+
+    def test_whatsapp_mode_empty_string_accepted(self):
+        """whatsapp_mode='' (default / disabled) must be accepted."""
+        s = Settings(whatsapp_mode="")
+        assert s.whatsapp_mode == ""
+
+    def test_whatsapp_mode_personal_accepted(self):
+        """whatsapp_mode='personal' must be accepted."""
+        s = Settings(whatsapp_mode="personal")
+        assert s.whatsapp_mode == "personal"
+
+    def test_whatsapp_mode_business_accepted(self):
+        """whatsapp_mode='business' must be accepted."""
+        s = Settings(whatsapp_mode="business")
+        assert s.whatsapp_mode == "business"
+
+    def test_whatsapp_mode_invalid_rejected(self):
+        """whatsapp_mode='cloud' is not a valid option and must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            Settings(whatsapp_mode="cloud")
+
+    def test_whatsapp_mode_typo_rejected(self):
+        """whatsapp_mode='Buisness' (typo/wrong case) must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            Settings(whatsapp_mode="Buisness")
+
+    # ─── tts_provider ───────────────────────────────────────────────────────
+
+    def test_tts_provider_openai_accepted(self):
+        """tts_provider='openai' (default) must be accepted."""
+        s = Settings(tts_provider="openai")
+        assert s.tts_provider == "openai"
+
+    def test_tts_provider_elevenlabs_accepted(self):
+        """tts_provider='elevenlabs' must be accepted."""
+        s = Settings(tts_provider="elevenlabs")
+        assert s.tts_provider == "elevenlabs"
+
+    def test_tts_provider_sarvam_accepted(self):
+        """tts_provider='sarvam' must be accepted."""
+        s = Settings(tts_provider="sarvam")
+        assert s.tts_provider == "sarvam"
+
+    def test_tts_provider_invalid_rejected(self):
+        """tts_provider='azure' is not a valid option and must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            Settings(tts_provider="azure")
+
+    def test_tts_provider_typo_rejected(self):
+        """tts_provider='OpenAI' (wrong case) must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            Settings(tts_provider="OpenAI")
+
+    # ─── stt_provider ───────────────────────────────────────────────────────
+
+    def test_stt_provider_openai_accepted(self):
+        """stt_provider='openai' (default) must be accepted."""
+        s = Settings(stt_provider="openai")
+        assert s.stt_provider == "openai"
+
+    def test_stt_provider_sarvam_accepted(self):
+        """stt_provider='sarvam' must be accepted."""
+        s = Settings(stt_provider="sarvam")
+        assert s.stt_provider == "sarvam"
+
+    def test_stt_provider_invalid_rejected(self):
+        """stt_provider='whisper' is not a valid option and must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            Settings(stt_provider="whisper")
+
+    def test_stt_provider_typo_rejected(self):
+        """stt_provider='Sarvam' (wrong case) must raise ValidationError."""
+        with pytest.raises(ValidationError):
+            Settings(stt_provider="Sarvam")
