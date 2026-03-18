@@ -65,77 +65,28 @@ def _ensure_supported_url(url: httpx.URL) -> None:
         raise ValueError("Blocked URL: hostname is required.")
 
 
-def _redirect_method_for_status(method: str, status_code: int) -> str:
-    if status_code == 303:
-        return "GET"
-    if status_code in {301, 302} and method.upper() == "POST":
-        return "GET"
-    return method.upper()
-
-
-def _should_drop_body_on_redirect(status_code: int, original_method: str) -> bool:
-    method = original_method.upper()
-    if status_code == 303:
-        return True
-    if status_code in {301, 302} and method == "POST":
-        return True
-    return False
-
-
 def _port_for_url(url: httpx.URL) -> int:
     if url.port is not None:
         return url.port
     return 443 if url.scheme == "https" else 80
 
 
-def _default_port_for_scheme(scheme: str) -> int:
-    return 443 if scheme == "https" else 80
-
-
-def _host_header_for_url(url: httpx.URL) -> str:
-    if url.host is None:
-        raise ValueError("Blocked URL: hostname is required.")
-
-    host = url.host
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-
-    if url.port is not None and url.port != _default_port_for_scheme(url.scheme):
-        return f"{host}:{url.port}"
-
-    return host
-
-
 def _validate_public_ip(raw_ip: str) -> str:
     parsed_ip = _normalize_ip_address(raw_ip)
-
-    is_site_local = False
-    if isinstance(parsed_ip, ipaddress.IPv6Address):
-        is_site_local = parsed_ip.is_site_local
-
-    if (
-        not parsed_ip.is_global
-        or parsed_ip.is_private
-        or parsed_ip.is_loopback
-        or parsed_ip.is_link_local
-        or parsed_ip.is_multicast
-        or parsed_ip.is_reserved
-        or parsed_ip.is_unspecified
-        or is_site_local
-    ):
+    if not parsed_ip.is_global:
         raise ValueError("Blocked URL: resolved to non-public IP address.")
 
     return str(parsed_ip)
 
 
-async def _resolve_public_ips(hostname: str, port: int) -> list[str]:
+async def _resolve_public_ip(hostname: str, port: int) -> str:
     try:
         literal_ip = ipaddress.ip_address(hostname)
     except ValueError:
         literal_ip = None
 
     if literal_ip is not None:
-        return [_validate_public_ip(hostname)]
+        return _validate_public_ip(hostname)
 
     loop = _get_running_loop()
     try:
@@ -147,27 +98,17 @@ async def _resolve_public_ips(hostname: str, port: int) -> list[str]:
         raise ValueError("Could not resolve URL hostname.")
 
     candidate_ips: list[str] = []
-    seen: set[str] = set()
     for record in addrinfo:
         sockaddr = record[4]
         if not sockaddr:
             continue
         raw_ip = sockaddr[0]
-        validated_ip = _validate_public_ip(raw_ip)
-        if validated_ip in seen:
-            continue
-        seen.add(validated_ip)
-        candidate_ips.append(validated_ip)
+        candidate_ips.append(_validate_public_ip(raw_ip))
 
     if not candidate_ips:
         raise ValueError("Could not resolve URL hostname.")
 
-    return candidate_ips
-
-
-async def _resolve_public_ip(hostname: str, port: int) -> str:
-    """Backward-compatible helper returning a single validated IP."""
-    return (await _resolve_public_ips(hostname, port))[0]
+    return candidate_ips[0]
 
 
 def _next_redirect_url(current_url: httpx.URL, location: str) -> httpx.URL:
@@ -179,59 +120,33 @@ def _next_redirect_url(current_url: httpx.URL, location: str) -> httpx.URL:
 async def _safe_get(
     url: str,
     timeout: float = _DEFAULT_HTTP_TIMEOUT,
-    method: str = "GET",
-    content: bytes | None = None,
 ) -> httpx.Response:
     current_url = httpx.URL(url)
     _ensure_supported_url(current_url)
-    current_method = method.upper()
-    current_content = content
 
     for _ in range(_MAX_REDIRECT_HOPS + 1):
         if current_url.host is None:
             raise ValueError("Blocked URL: hostname is required.")
 
-        candidate_ips = await _resolve_public_ips(current_url.host, _port_for_url(current_url))
-        last_transport_error: httpx.TransportError | None = None
-        response: httpx.Response | None = None
+        pinned_ip = await _resolve_public_ip(current_url.host, _port_for_url(current_url))
 
-        for pinned_ip in candidate_ips:
-            transport = IPPinningTransport(
-                pinned_ip=pinned_ip,
-                original_host=current_url.host,
-                host_header=_host_header_for_url(current_url),
-            )
+        transport = IPPinningTransport(
+            pinned_ip=pinned_ip,
+            original_host=current_url.host,
+        )
 
-            try:
-                async with httpx.AsyncClient(
-                    timeout=timeout,
-                    follow_redirects=False,
-                    transport=transport,
-                ) as client:
-                    response = await client.request(
-                        current_method,
-                        str(current_url),
-                        content=current_content,
-                    )
-                break
-            except httpx.TransportError as exc:
-                last_transport_error = exc
-                continue
-
-        if response is None:
-            if last_transport_error is not None:
-                raise last_transport_error
-            raise ValueError("Could not connect to URL.")
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=False,
+            transport=transport,
+        ) as client:
+            response = await client.get(str(current_url))
 
         if response.status_code in {301, 302, 303, 307, 308}:
             location = response.headers.get("location")
             if not location:
                 return response
 
-            next_method = _redirect_method_for_status(current_method, response.status_code)
-            if _should_drop_body_on_redirect(response.status_code, current_method):
-                current_content = None
-            current_method = next_method
             current_url = _next_redirect_url(current_url, location)
             continue
 
@@ -281,8 +196,8 @@ class UrlExtractTool(BaseTool):
         for raw_url in urls:
             try:
                 _ensure_supported_url(httpx.URL(raw_url))
-            except (httpx.InvalidURL, ValueError, TypeError) as exc:
-                return self._error(f"Invalid or blocked URL: {exc}")
+            except ValueError as exc:
+                return self._error(str(exc))
 
         settings = get_settings()
         provider = settings.url_extract_provider

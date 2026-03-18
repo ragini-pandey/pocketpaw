@@ -206,14 +206,14 @@ class TestUrlExtractTool:
 
         with (
             patch(
-                "pocketpaw.tools.builtin.url_extract._resolve_public_ips",
-                AsyncMock(return_value=["93.184.216.34"]),
+                "pocketpaw.tools.builtin.url_extract._resolve_public_ip",
+                AsyncMock(return_value="93.184.216.34"),
             ),
             patch("httpx.AsyncClient") as mock_client_cls,
             patch.dict("sys.modules", {"html2text": mock_html2text}),
         ):
             mock_client = MagicMock()
-            mock_client.request = AsyncMock(return_value=mock_resp)
+            mock_client.get = AsyncMock(return_value=mock_resp)
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
@@ -241,14 +241,14 @@ class TestUrlExtractTool:
 
         with (
             patch(
-                "pocketpaw.tools.builtin.url_extract._resolve_public_ips",
-                AsyncMock(return_value=["93.184.216.34"]),
+                "pocketpaw.tools.builtin.url_extract._resolve_public_ip",
+                AsyncMock(return_value="93.184.216.34"),
             ),
             patch("httpx.AsyncClient") as mock_client_cls,
             patch.dict("sys.modules", {"html2text": mock_html2text}),
         ):
             mock_client = MagicMock()
-            mock_client.request = AsyncMock(return_value=mock_resp)
+            mock_client.get = AsyncMock(return_value=mock_resp)
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
@@ -314,14 +314,17 @@ class TestUrlExtractTool:
 
         with (
             patch(
-                "pocketpaw.tools.builtin.url_extract._resolve_public_ips",
-                AsyncMock(side_effect=[["93.184.216.34"], ["93.184.216.35"]]),
+                "pocketpaw.tools.builtin.url_extract._resolve_public_ip",
+                AsyncMock(side_effect=["93.184.216.34", "93.184.216.35"]),
             ),
             patch("httpx.AsyncClient") as mock_client_cls,
             patch.dict("sys.modules", {"html2text": mock_html2text}),
         ):
+            async def mock_client_get(url):
+                return await mock_get("GET", url, None)
+
             mock_client = MagicMock()
-            mock_client.request = AsyncMock(side_effect=mock_get)
+            mock_client.get = AsyncMock(side_effect=mock_client_get)
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
@@ -359,26 +362,6 @@ class TestUrlExtractTool:
 
         await transport.aclose()
 
-    async def test_ip_pinning_transport_uses_authority_host_header_when_provided(self):
-        transport = url_extract_module.IPPinningTransport(
-            pinned_ip="93.184.216.34",
-            original_host="example.com",
-            host_header="example.com:8443",
-        )
-        request = httpx.Request("GET", "https://example.com:8443/path")
-
-        delegated_response = httpx.Response(status_code=200, request=request, text="ok")
-        transport._transport.handle_async_request = AsyncMock(return_value=delegated_response)
-
-        await transport.handle_async_request(request)
-
-        awaited_call = transport._transport.handle_async_request.await_args
-        assert awaited_call is not None
-        forwarded_request = awaited_call.args[0]
-        assert forwarded_request.headers["host"] == "example.com:8443"
-
-        await transport.aclose()
-
     @patch("pocketpaw.tools.builtin.url_extract.get_settings")
     async def test_local_extract_blocks_private_dns_result(self, mock_settings, tool):
         mock_settings.return_value = MagicMock(url_extract_provider="local")
@@ -397,7 +380,7 @@ class TestUrlExtractTool:
             patch.dict("sys.modules", {"html2text": mock_html2text}),
         ):
             mock_client = MagicMock()
-            mock_client.request = AsyncMock(
+            mock_client.get = AsyncMock(
                 side_effect=AssertionError("network should not be called")
             )
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -428,7 +411,7 @@ class TestUrlExtractTool:
             patch.dict("sys.modules", {"html2text": mock_html2text}),
         ):
             mock_client = MagicMock()
-            mock_client.request = AsyncMock(
+            mock_client.get = AsyncMock(
                 side_effect=AssertionError("network should not be called")
             )
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -474,7 +457,7 @@ class TestUrlExtractTool:
             patch.dict("sys.modules", {"html2text": mock_html2text}),
         ):
             mock_client = MagicMock()
-            mock_client.request = AsyncMock(return_value=redirect_resp)
+            mock_client.get = AsyncMock(return_value=redirect_resp)
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
@@ -504,10 +487,10 @@ class TestUrlExtractTool:
 
         with (
             patch(
-                "pocketpaw.tools.builtin.url_extract._resolve_public_ips",
+                "pocketpaw.tools.builtin.url_extract._resolve_public_ip",
                 AsyncMock(
                     side_effect=[
-                        ["93.184.216.34"],
+                        "93.184.216.34",
                         ValueError("Blocked URL: resolved to non-public IP address."),
                     ]
                 ),
@@ -516,7 +499,7 @@ class TestUrlExtractTool:
             patch.dict("sys.modules", {"html2text": mock_html2text}),
         ):
             mock_client = MagicMock()
-            mock_client.request = AsyncMock(return_value=first_hop_response)
+            mock_client.get = AsyncMock(return_value=first_hop_response)
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
@@ -567,149 +550,6 @@ class TestUrlExtractTool:
         assert forwarded_request.url.host == "93.184.216.34"
         assert forwarded_request.headers["host"] == "flip.example.com"
         assert forwarded_request.extensions["sni_hostname"] == "flip.example.com"
-
-    async def test_safe_get_retries_next_valid_ip_when_first_connect_fails(self):
-        """When first pinned IP fails to connect, next validated IP is attempted."""
-
-        transport_one = MagicMock()
-        transport_one.handle_async_request = AsyncMock(side_effect=httpx.ConnectError("boom"))
-        transport_one.aclose = AsyncMock()
-
-        delegated_response = httpx.Response(
-            status_code=200,
-            request=httpx.Request("GET", "http://8.8.8.8/start"),
-            text="ok",
-        )
-        transport_two = MagicMock()
-        transport_two.handle_async_request = AsyncMock(return_value=delegated_response)
-        transport_two.aclose = AsyncMock()
-
-        with (
-            patch(
-                "pocketpaw.tools.builtin.url_extract._resolve_public_ips",
-                AsyncMock(return_value=["1.1.1.1", "8.8.8.8"]),
-            ),
-            patch(
-                "pocketpaw.tools.builtin.url_extract.httpx.AsyncHTTPTransport",
-                side_effect=[transport_one, transport_two],
-            ),
-        ):
-            response = await url_extract_module._safe_get("http://fallback.example.com/start")
-
-        assert response.status_code == 200
-        assert transport_one.handle_async_request.await_count == 1
-        assert transport_two.handle_async_request.await_count == 1
-
-    async def test_validate_public_ip_blocks_multicast_and_site_local(self):
-        with pytest.raises(ValueError, match="Blocked URL"):
-            url_extract_module._validate_public_ip("224.0.0.1")
-
-        with pytest.raises(ValueError, match="Blocked URL"):
-            url_extract_module._validate_public_ip("ff02::1")
-
-        with pytest.raises(ValueError, match="Blocked URL"):
-            url_extract_module._validate_public_ip("fec0::1")
-
-    @patch("pocketpaw.tools.builtin.url_extract.get_settings")
-    async def test_parallel_provider_rejects_unsupported_scheme_early(self, mock_settings, tool):
-        mock_settings.return_value = MagicMock(
-            url_extract_provider="parallel",
-            parallel_api_key="test-key",
-        )
-
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            result = await tool.execute(urls=["file:///etc/passwd"])
-
-        assert "Error:" in result
-        assert "only http and https" in result.lower()
-        mock_client_cls.assert_not_called()
-
-    @patch("pocketpaw.tools.builtin.url_extract.get_settings")
-    async def test_execute_returns_error_for_malformed_url(self, mock_settings, tool):
-        mock_settings.return_value = MagicMock(url_extract_provider="local")
-
-        result = await tool.execute(urls=["https://\nexample.com"])
-
-        assert "Error:" in result
-        assert "invalid or blocked url" in result.lower()
-
-    async def test_safe_get_preserves_method_and_body_for_307_redirect(self):
-        first = httpx.Response(
-            status_code=307,
-            headers={"location": "http://example.com/next"},
-            request=httpx.Request("POST", "http://example.com/start", content=b"payload"),
-        )
-        second = httpx.Response(
-            status_code=200,
-            request=httpx.Request("POST", "http://example.com/next", content=b"payload"),
-            text="ok",
-        )
-
-        with (
-            patch(
-                "pocketpaw.tools.builtin.url_extract._resolve_public_ips",
-                AsyncMock(side_effect=[["8.8.8.8"], ["8.8.8.8"]]),
-            ),
-            patch("httpx.AsyncClient") as mock_client_cls,
-        ):
-            mock_client = AsyncMock()
-            mock_client.request = AsyncMock(side_effect=[first, second])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
-
-            response = await url_extract_module._safe_get(
-                "http://example.com/start",
-                method="POST",
-                content=b"payload",
-            )
-
-        assert response.status_code == 200
-        first_call = mock_client.request.await_args_list[0]
-        second_call = mock_client.request.await_args_list[1]
-        assert first_call.args[0] == "POST"
-        assert second_call.args[0] == "POST"
-        assert first_call.kwargs["content"] == b"payload"
-        assert second_call.kwargs["content"] == b"payload"
-
-    async def test_safe_get_switches_to_get_for_303_redirect(self):
-        first = httpx.Response(
-            status_code=303,
-            headers={"location": "http://example.com/final"},
-            request=httpx.Request("POST", "http://example.com/start", content=b"payload"),
-        )
-        second = httpx.Response(
-            status_code=200,
-            request=httpx.Request("GET", "http://example.com/final"),
-            text="ok",
-        )
-
-        with (
-            patch(
-                "pocketpaw.tools.builtin.url_extract._resolve_public_ips",
-                AsyncMock(side_effect=[["8.8.8.8"], ["8.8.8.8"]]),
-            ),
-            patch("httpx.AsyncClient") as mock_client_cls,
-        ):
-            mock_client = AsyncMock()
-            mock_client.request = AsyncMock(side_effect=[first, second])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
-
-            response = await url_extract_module._safe_get(
-                "http://example.com/start",
-                method="POST",
-                content=b"payload",
-            )
-
-        assert response.status_code == 200
-        first_call = mock_client.request.await_args_list[0]
-        second_call = mock_client.request.await_args_list[1]
-        assert first_call.args[0] == "POST"
-        assert second_call.args[0] == "GET"
-        assert first_call.kwargs["content"] == b"payload"
-        assert second_call.kwargs["content"] is None
 
     @patch("pocketpaw.tools.builtin.url_extract.get_settings")
     async def test_unknown_provider(self, mock_settings, tool):
