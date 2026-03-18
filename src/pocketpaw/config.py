@@ -620,8 +620,7 @@ class Settings(BaseSettings):
     stt_model: str = Field(
         default="whisper-1",
         description=(
-            "STT model (whisper-1 for OpenAI, scribe_v1 for ElevenLabs, "
-            "saaras:v3 for Sarvam)"
+            "STT model (whisper-1 for OpenAI, scribe_v1 for ElevenLabs, saaras:v3 for Sarvam)"
         ),
     )
 
