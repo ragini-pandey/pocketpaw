@@ -2024,6 +2024,7 @@
               >
                 <option value="openai">OpenAI Whisper</option>
                 <option value="sarvam">Sarvam AI Saaras (Indian Languages)</option>
+                <option value="elevenlabs">ElevenLabs</option>
               </select>
               <div
                 class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none opacity-50"
@@ -2043,12 +2044,14 @@
               type="text"
               x-model="settings.sttModel"
               @change="saveSettings()"
-              :placeholder="settings.sttProvider === 'sarvam' ? 'saaras:v3' : 'whisper-1'"
+              :placeholder="settings.sttProvider === 'sarvam' ? 'saaras:v3' : settings.sttProvider === 'elevenlabs' ? 'scribe_v1' : 'whisper-1'"
               class="w-full bg-black/30 border border-[var(--glass-border)] rounded-[10px] py-2 px-3 text-[13px] text-white focus:outline-none focus:border-[var(--accent-color)] focus:bg-black/40 transition-all placeholder-white/40"
             />
-            <small class="text-white/50 text-[11px]"
-              >OpenAI Whisper model for speech-to-text transcription</small
-            >
+            <small class="text-white/50 text-[11px]" x-text="
+              settings.sttProvider === 'elevenlabs' ? 'ElevenLabs Scribe model (e.g. scribe_v1)' :
+              settings.sttProvider === 'sarvam' ? 'Sarvam Saaras model (e.g. saaras:v3)' :
+              'OpenAI Whisper model (e.g. whisper-1)'
+            "></small>
           </div>
 
           <!-- OCR Provider -->
