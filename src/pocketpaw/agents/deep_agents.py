@@ -29,6 +29,18 @@ _LANGCHAIN_PROVIDER_MAP: dict[str, str] = {
 }
 
 
+def _unwrap(value: Any) -> Any:
+    """Unwrap LangGraph Overwrite/Send wrapper objects to their inner value.
+
+    LangGraph uses Overwrite() to signal state replacement in streaming updates.
+    These objects are not iterable, so we need to extract the underlying value.
+    """
+    # Overwrite has a .value attribute containing the actual data
+    if hasattr(value, "value"):
+        return value.value
+    return value
+
+
 def _extract_content_text(content: Any) -> str:
     """Extract text from AIMessageChunk content.
 
@@ -288,13 +300,16 @@ class DeepAgentsBackend:
                         yield AgentEvent(type="message", content=content)
 
                 elif chunk_type == "updates":
-                    data = chunk.get("data", {})
+                    data = _unwrap(chunk.get("data", {}))
                     if not isinstance(data, dict):
                         continue
                     for _node_name, node_data in data.items():
+                        node_data = _unwrap(node_data)
                         if not isinstance(node_data, dict):
                             continue
-                        node_messages = node_data.get("messages", [])
+                        node_messages = _unwrap(node_data.get("messages", []))
+                        if not isinstance(node_messages, list):
+                            continue
                         for msg in node_messages:
                             # Tool call messages
                             tool_calls = getattr(msg, "tool_calls", None)

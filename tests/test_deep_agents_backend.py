@@ -113,6 +113,32 @@ class TestDeepAgentsProviderParsing:
         assert model == "anthropic/claude-sonnet-4-6"
 
 
+class TestDeepAgentsUnwrap:
+    """Tests for _unwrap helper that handles LangGraph Overwrite objects."""
+
+    def test_unwrap_plain_value(self):
+        from pocketpaw.agents.deep_agents import _unwrap
+
+        assert _unwrap([1, 2, 3]) == [1, 2, 3]
+        assert _unwrap({"key": "val"}) == {"key": "val"}
+        assert _unwrap("hello") == "hello"
+
+    def test_unwrap_overwrite_object(self):
+        from unittest.mock import MagicMock
+
+        from pocketpaw.agents.deep_agents import _unwrap
+
+        # Simulate LangGraph Overwrite object which has a .value attribute
+        overwrite = MagicMock()
+        overwrite.value = [{"role": "assistant", "content": "hi"}]
+        assert _unwrap(overwrite) == [{"role": "assistant", "content": "hi"}]
+
+    def test_unwrap_none(self):
+        from pocketpaw.agents.deep_agents import _unwrap
+
+        assert _unwrap(None) is None
+
+
 class TestDeepAgentsContentExtraction:
     """Tests for _extract_content_text helper."""
 
