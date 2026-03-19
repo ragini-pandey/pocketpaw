@@ -46,6 +46,109 @@ class TestDeepAgentsBackendInfo:
         assert info.install_hint["verify_import"] == "deepagents"
 
 
+class TestDeepAgentsProviderParsing:
+    """Tests for provider:model parsing and resolution."""
+
+    def test_parse_anthropic_colon_format(self):
+        from pocketpaw.agents.deep_agents import DeepAgentsBackend
+
+        settings = Settings(deep_agents_model="anthropic:claude-sonnet-4-6")
+        backend = DeepAgentsBackend(settings)
+        provider, model = backend._parse_provider_model()
+        assert provider == "anthropic"
+        assert model == "claude-sonnet-4-6"
+
+    def test_parse_openai_colon_format(self):
+        from pocketpaw.agents.deep_agents import DeepAgentsBackend
+
+        settings = Settings(deep_agents_model="openai:gpt-4o")
+        backend = DeepAgentsBackend(settings)
+        provider, model = backend._parse_provider_model()
+        assert provider == "openai"
+        assert model == "gpt-4o"
+
+    def test_parse_ollama_colon_format(self):
+        from pocketpaw.agents.deep_agents import DeepAgentsBackend
+
+        settings = Settings(deep_agents_model="ollama:llama3.2")
+        backend = DeepAgentsBackend(settings)
+        provider, model = backend._parse_provider_model()
+        assert provider == "ollama"
+        assert model == "llama3.2"
+
+    def test_parse_google_genai_colon_format(self):
+        from pocketpaw.agents.deep_agents import DeepAgentsBackend
+
+        settings = Settings(deep_agents_model="google_genai:gemini-2.0-flash")
+        backend = DeepAgentsBackend(settings)
+        provider, model = backend._parse_provider_model()
+        assert provider == "google_genai"
+        assert model == "gemini-2.0-flash"
+
+    def test_parse_model_only_defaults_to_anthropic(self):
+        from pocketpaw.agents.deep_agents import DeepAgentsBackend
+
+        settings = Settings(deep_agents_model="claude-sonnet-4-6")
+        backend = DeepAgentsBackend(settings)
+        provider, model = backend._parse_provider_model()
+        assert provider == "anthropic"
+        assert model == "claude-sonnet-4-6"
+
+    def test_parse_empty_model_defaults(self):
+        from pocketpaw.agents.deep_agents import DeepAgentsBackend
+
+        settings = Settings(deep_agents_model="")
+        backend = DeepAgentsBackend(settings)
+        provider, model = backend._parse_provider_model()
+        assert provider == "anthropic"
+        assert model == "claude-sonnet-4-6"
+
+    def test_parse_litellm_colon_format(self):
+        from pocketpaw.agents.deep_agents import DeepAgentsBackend
+
+        settings = Settings(deep_agents_model="litellm:anthropic/claude-sonnet-4-6")
+        backend = DeepAgentsBackend(settings)
+        provider, model = backend._parse_provider_model()
+        assert provider == "litellm"
+        assert model == "anthropic/claude-sonnet-4-6"
+
+
+class TestDeepAgentsContentExtraction:
+    """Tests for _extract_content_text helper."""
+
+    def test_string_content(self):
+        from pocketpaw.agents.deep_agents import _extract_content_text
+
+        assert _extract_content_text("hello") == "hello"
+
+    def test_list_content_text_blocks(self):
+        from pocketpaw.agents.deep_agents import _extract_content_text
+
+        content = [{"type": "text", "text": "hello "}, {"type": "text", "text": "world"}]
+        assert _extract_content_text(content) == "hello world"
+
+    def test_list_content_mixed_blocks(self):
+        from pocketpaw.agents.deep_agents import _extract_content_text
+
+        content = [
+            {"type": "text", "text": "hello"},
+            {"type": "tool_use", "id": "123", "name": "test"},
+        ]
+        assert _extract_content_text(content) == "hello"
+
+    def test_list_content_plain_strings(self):
+        from pocketpaw.agents.deep_agents import _extract_content_text
+
+        assert _extract_content_text(["hello ", "world"]) == "hello world"
+
+    def test_empty_content(self):
+        from pocketpaw.agents.deep_agents import _extract_content_text
+
+        assert _extract_content_text("") == ""
+        assert _extract_content_text([]) == ""
+        assert _extract_content_text(None) == ""
+
+
 class TestDeepAgentsBackendInit:
     """Tests for backend initialization."""
 
@@ -74,21 +177,6 @@ class TestDeepAgentsBackendInit:
             backend._custom_tools = None
             result = backend._build_custom_tools()
             assert result == []
-
-    def test_build_model_default(self):
-        """Default model string is returned."""
-        from pocketpaw.agents.deep_agents import DeepAgentsBackend
-
-        backend = DeepAgentsBackend(Settings())
-        assert backend._build_model() == "anthropic:claude-sonnet-4-6"
-
-    def test_build_model_custom(self):
-        """Custom model from settings is returned."""
-        from pocketpaw.agents.deep_agents import DeepAgentsBackend
-
-        settings = Settings(deep_agents_model="openai:gpt-4o")
-        backend = DeepAgentsBackend(settings)
-        assert backend._build_model() == "openai:gpt-4o"
 
 
 class TestDeepAgentsBackendRun:
@@ -129,6 +217,18 @@ class TestDeepAgentsBackendRun:
         assert "available" in status
         assert "running" in status
         assert "model" in status
+        assert "provider" in status
+        assert "resolved_model" in status
+
+    @pytest.mark.asyncio
+    async def test_get_status_shows_resolved_provider(self):
+        from pocketpaw.agents.deep_agents import DeepAgentsBackend
+
+        settings = Settings(deep_agents_model="ollama:codellama")
+        backend = DeepAgentsBackend(settings)
+        status = await backend.get_status()
+        assert status["provider"] == "ollama"
+        assert status["resolved_model"] == "codellama"
 
 
 class TestDeepAgentsRegistry:
