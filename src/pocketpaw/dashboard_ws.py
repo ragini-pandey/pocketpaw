@@ -529,6 +529,24 @@ async def websocket_handler(
                         val = data["soul_auto_save_interval"]
                         if isinstance(val, int | float) and 0 <= val <= 3600:
                             settings.soul_auto_save_interval = int(val)
+                    if "soul_biorhythm" in data:
+                        val = data["soul_biorhythm"]
+                        if isinstance(val, dict):
+                            allowed = {
+                                "energy_drain_rate",
+                                "mood_inertia",
+                                "tired_threshold",
+                                "auto_regen",
+                            }
+                            clean = {}
+                            for k, v in val.items():
+                                if k in allowed and isinstance(v, int | float):
+                                    clean[k] = float(max(0.0, min(1.0, v)))
+                            if clean:
+                                settings.soul_biorhythm = {
+                                    **settings.soul_biorhythm,
+                                    **clean,
+                                }
                     warnings = validate_api_keys(settings)
                     settings.save()
 
@@ -786,6 +804,7 @@ async def websocket_handler(
                             "soulArchetype": settings.soul_archetype,
                             "soulPersona": settings.soul_persona,
                             "soulAutoSaveInterval": settings.soul_auto_save_interval,
+                            "soulBiorhythm": settings.soul_biorhythm,
                             "agentActive": agent_active,
                             "agentStatus": agent_status,
                         },

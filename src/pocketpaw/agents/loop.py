@@ -344,7 +344,7 @@ class AgentLoop:
             logger.info("Processing cancelled for session %s", session_key)
             raise
 
-    _WELCOME_EXCLUDED = frozenset({Channel.WEBSOCKET, Channel.CLI, Channel.SYSTEM})
+    _WELCOME_EXCLUDED = frozenset({Channel.WEBSOCKET, Channel.CLI, Channel.SYSTEM, Channel.DISCORD})
 
     async def _process_message_inner(self, message: InboundMessage, session_key: str) -> None:
         """Inner message processing (called under concurrency guards)."""
@@ -888,7 +888,7 @@ class AgentLoop:
     async def _soul_observe_and_emit(
         self, user_input: str, agent_output: str, session_key: str
     ) -> None:
-        """Observe interaction and emit soul state event."""
+        """Observe interaction, run self-evaluation, and emit soul state event."""
         if self._soul_manager is None or not self._soul_manager._initialized:
             return
         try:
@@ -896,14 +896,21 @@ class AgentLoop:
             soul = self._soul_manager.soul
             if soul is not None:
                 state = soul.state
+                event_data: dict[str, Any] = {
+                    "mood": getattr(state, "mood", None),
+                    "energy": getattr(state, "energy", None),
+                    "session_key": session_key,
+                }
+
+                # v0.2.4+: Run rubric self-evaluation (non-blocking)
+                eval_result = await self._soul_manager.evaluate(user_input, agent_output)
+                if eval_result is not None:
+                    event_data["evaluation"] = eval_result
+
                 await self.bus.publish_system(
                     SystemEvent(
                         event_type="soul_state",
-                        data={
-                            "mood": getattr(state, "mood", None),
-                            "energy": getattr(state, "energy", None),
-                            "session_key": session_key,
-                        },
+                        data=event_data,
                     )
                 )
         except Exception:

@@ -195,6 +195,11 @@ class Settings(BaseSettings):
             "All backends support 'litellm' as a provider for open-source model access."
         ),
     )
+    # backend fallback chain
+    fallback_backends: list[str] = Field(
+        default_factory=list,
+        description=("Ordered list of fallback backends to try if the primary backend fails"),
+    )
 
     # Claude Agent SDK Settings
     claude_sdk_provider: str = Field(
@@ -345,12 +350,25 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(default=None, description="OpenAI API key")
     openai_model: str = Field(default="gpt-5.2", description="OpenAI model to use")
     anthropic_api_key: str | None = Field(default=None, description="Anthropic API key")
+    claude_code_oauth_token: str | None = Field(
+        default=None,
+        description=(
+            "Claude Code OAuth token JSON (from `claude setup-token`). "
+            "Allows Docker/headless use of Max/Pro subscription without an API key."
+        ),
+    )
     anthropic_model: str = Field(default="claude-sonnet-4-6", description="Anthropic model to use")
 
     # Memory Backend
     memory_backend: str = Field(
         default="file",
-        description="Memory backend: 'file' (simple markdown), 'mem0' (semantic with LLM)",
+        description=(
+            "Memory backend: 'file' (simple markdown), "
+            "'mem0' (semantic with LLM), 'vector' (ChromaDB)"
+        ),
+    )
+    vectordb_path: str = Field(
+        default="~/.pocketpaw/chroma_db", description="Storage path for the vector database"
     )
     memory_use_inference: bool = Field(
         default=True, description="Use LLM to extract facts from memories (only for mem0 backend)"
@@ -429,6 +447,14 @@ class Settings(BaseSettings):
     discord_conversation_channel_ids: list[int] = Field(
         default_factory=list,
         description="Discord channels where the bot participates in group conversation",
+    )
+    discord_conversation_all_channels: bool = Field(
+        default=False,
+        description="Enable conversation mode in all server channels (overrides channel list)",
+    )
+    discord_conversation_exclude_channel_ids: list[int] = Field(
+        default_factory=list,
+        description="Channel IDs excluded from conversation mode (e.g. announcements)",
     )
     discord_bot_name: str = Field(
         default="Paw", description="Display name used by the bot in conversation"
@@ -800,6 +826,21 @@ class Settings(BaseSettings):
         default=300,
         description="Auto-save soul state interval in seconds (0 = disabled)",
     )
+    soul_biorhythm: dict[str, float] = Field(
+        default_factory=lambda: {
+            "energy_drain_rate": 0.02,
+            "mood_inertia": 0.8,
+            "tired_threshold": 0.3,
+            "auto_regen": 0.01,
+        },
+        description=(
+            "Biorhythm configuration for soul energy/mood dynamics (v0.2.4+). "
+            "energy_drain_rate: how fast energy depletes per interaction. "
+            "mood_inertia: resistance to mood change (0-1). "
+            "tired_threshold: energy level that triggers fatigue. "
+            "auto_regen: passive energy recovery rate."
+        ),
+    )
 
     notification_channels: list[str] = Field(
         default_factory=list,
@@ -971,7 +1012,7 @@ def _migrate_plaintext_keys() -> None:
         return
 
     try:
-        data = json.loads(config_path.read_text())
+        data = json.loads(config_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, Exception):
         return
 
@@ -983,9 +1024,14 @@ def _migrate_plaintext_keys() -> None:
         if value and isinstance(value, str):
             store.set(field, value)
             migrated_count += 1
+            # Remove plaintext secret from config to prevent leakage
+            del data[field]
 
     if migrated_count:
         logger.info("Copied %d secret(s) from config to encrypted store.", migrated_count)
+        # Save the cleaned config back to remove plaintext secrets
+        config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        _chmod_safe(config_path, 0o600)
 
     _MIGRATION_DONE_PATH.write_text("1")
     _chmod_safe(_MIGRATION_DONE_PATH, 0o600)

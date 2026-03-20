@@ -31,6 +31,8 @@ _DEFAULT_IDENTITY = (
     "You are PocketPaw, a helpful AI assistant running locally on the user's computer."
 )
 
+_HTTP_TRANSPORTS: frozenset[str] = frozenset({"http", "sse", "streamable-http"})
+
 
 class ClaudeSDKBackend:
     """Claude Agent SDK backend — the recommended default.
@@ -410,7 +412,7 @@ class ClaudeSDKBackend:
                     entry["args"] = cfg.args
                 if cfg.env:
                     entry["env"] = cfg.env
-            elif cfg.transport in ("http", "sse", "streamable-http"):
+            elif cfg.transport in _HTTP_TRANSPORTS:
                 if not cfg.url:
                     logger.warning("MCP server '%s' (%s) has no url", cfg.name, cfg.transport)
                     continue
@@ -841,6 +843,12 @@ class ClaudeSDKBackend:
                 env_key = os.environ.get("ANTHROPIC_API_KEY")
                 if env_key:
                     sdk_env = {"ANTHROPIC_API_KEY": env_key}
+
+            # Pass Claude Code OAuth token (Max/Pro subscription in Docker/headless)
+            oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+            if oauth_token:
+                sdk_env = sdk_env or {}
+                sdk_env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
 
             # Strip nesting-detection env vars (set when launched from
             # a Claude Code terminal) so the subprocess starts cleanly.

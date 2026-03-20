@@ -65,6 +65,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # --- Feature extras ---
+vector = ["chromadb"]
 dashboard = [
     # Kept for backward compat — dashboard deps are now in core.
     # Users with `pip install pocketpaw[dashboard]` in scripts won't break.
@@ -100,7 +101,7 @@ memory = [
     "ollama>=0.6.1",
 ]
 soul = [
-    "soul-protocol[engine]>=0.2.3",
+    "soul-protocol[engine]>=0.2.4",
 ]
 
 # --- Channel extras ---
@@ -203,7 +204,7 @@ all-tools = [
     "mem0ai>=0.1.115",
     "ollama>=0.6.1",
     # soul
-    "soul-protocol[engine]>=0.2.3",
+    "soul-protocol[engine]>=0.2.4",
 ]
 all-backends = [
     "pocketpaw[openai-agents,google-adk,copilot-sdk,deep-agents,litellm]",
@@ -235,7 +236,7 @@ all = [
     "sarvamai>=0.1.25",
     "mcp>=1.0.0",
     # soul
-    "soul-protocol[engine]>=0.2.3",
+    "soul-protocol[engine]>=0.2.4",
     # backends
     "openai-agents>=0.2.0",
     "google-adk>=1.0.0",

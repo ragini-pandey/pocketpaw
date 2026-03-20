@@ -822,6 +822,11 @@
             "icon": "lucide:container"
           },
           {
+            "label": "Discord Docker",
+            "href": "/deployment/discord-docker",
+            "icon": "lucide:gamepad-2"
+          },
+          {
             "label": "Systemd Service",
             "href": "/deployment/systemd",
             "icon": "lucide:cog"
