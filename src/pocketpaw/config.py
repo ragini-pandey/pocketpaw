@@ -195,6 +195,11 @@ class Settings(BaseSettings):
             "All backends support 'litellm' as a provider for open-source model access."
         ),
     )
+    # backend fallback chain
+    fallback_backends: list[str] = Field(
+        default_factory=list,
+        description=("Ordered list of fallback backends to try if the primary backend fails"),
+    )
 
     # Claude Agent SDK Settings
     claude_sdk_provider: str = Field(
@@ -340,7 +345,13 @@ class Settings(BaseSettings):
     # Memory Backend
     memory_backend: str = Field(
         default="file",
-        description="Memory backend: 'file' (simple markdown), 'mem0' (semantic with LLM)",
+        description=("Memory backend: 'file' (simple markdown), "
+        "'mem0' (semantic with LLM), 'vector' (ChromaDB)"
+        ),
+    )
+    vectordb_path: str = Field(
+        default="~/.pocketpaw/chroma_db",
+        description="Storage path for the vector database"
     )
     memory_use_inference: bool = Field(
         default=True, description="Use LLM to extract facts from memories (only for mem0 backend)"
@@ -497,6 +508,10 @@ class Settings(BaseSettings):
     api_cors_allowed_origins: list[str] = Field(
         default_factory=list,
         description="Additional CORS origins for external clients (e.g. tauri://localhost)",
+    )
+    a2a_trusted_agents: list[str] = Field(
+        default_factory=list,
+        description="Explicitly allowed A2A agent base URLs for task delegation (prevents SSRF)",
     )
     api_rate_limit_per_key: int = Field(
         default=60,
@@ -706,6 +721,28 @@ class Settings(BaseSettings):
     # Web Server
     web_host: str = Field(default="127.0.0.1", description="Web server host")
     web_port: int = Field(default=8888, description="Web server port")
+
+    # A2A Protocol
+    a2a_enabled: bool = Field(
+        default=False,
+        description="Enable the A2A Protocol remote endpoints (allow external delegates)",
+    )
+    a2a_agent_name: str = Field(
+        default="PocketPaw",
+        description="Agent name advertised in the A2A Agent Card",
+    )
+    a2a_agent_description: str = Field(
+        default="",
+        description="Agent description for A2A Agent Card (empty = default)",
+    )
+    a2a_agent_version: str = Field(
+        default="",
+        description="Agent version for A2A Agent Card (empty = auto-detect from package)",
+    )
+    a2a_task_timeout: int = Field(
+        default=120,
+        description="Timeout in seconds for A2A task processing",
+    )
 
     # MCP OAuth
     mcp_client_metadata_url: str = Field(
@@ -935,7 +972,7 @@ def _migrate_plaintext_keys() -> None:
         return
 
     try:
-        data = json.loads(config_path.read_text())
+        data = json.loads(config_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, Exception):
         return
 
@@ -947,9 +984,14 @@ def _migrate_plaintext_keys() -> None:
         if value and isinstance(value, str):
             store.set(field, value)
             migrated_count += 1
+            # Remove plaintext secret from config to prevent leakage
+            del data[field]
 
     if migrated_count:
         logger.info("Copied %d secret(s) from config to encrypted store.", migrated_count)
+        # Save the cleaned config back to remove plaintext secrets
+        config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        _chmod_safe(config_path, 0o600)
 
     _MIGRATION_DONE_PATH.write_text("1")
     _chmod_safe(_MIGRATION_DONE_PATH, 0o600)

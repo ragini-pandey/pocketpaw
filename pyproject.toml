@@ -65,6 +65,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # --- Feature extras ---
+vector = ["chromadb"]
 dashboard = [
     # Kept for backward compat — dashboard deps are now in core.
     # Users with `pip install pocketpaw[dashboard]` in scripts won't break.
@@ -334,3 +335,4 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
