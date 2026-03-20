@@ -961,7 +961,7 @@ def _migrate_plaintext_keys() -> None:
         return
 
     try:
-        data = json.loads(config_path.read_text())
+        data = json.loads(config_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, Exception):
         return
 
@@ -979,7 +979,7 @@ def _migrate_plaintext_keys() -> None:
     if migrated_count:
         logger.info("Copied %d secret(s) from config to encrypted store.", migrated_count)
         # Save the cleaned config back to remove plaintext secrets
-        config_path.write_text(json.dumps(data, indent=2))
+        config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         _chmod_safe(config_path, 0o600)
 
     _MIGRATION_DONE_PATH.write_text("1")
