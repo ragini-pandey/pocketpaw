@@ -137,6 +137,11 @@ _CHANNEL_DEPS: dict[str, tuple[str, str, str]] = {
 _MEMORY_CONFIG_KEYS = {
     "memory_backend": "memory_backend",
     "memory_use_inference": "memory_use_inference",
+    "file_vector_enabled": "file_vector_enabled",
+    "vector_store": "vector_store",
+    "embedding_provider": "embedding_provider",
+    "embedding_model": "embedding_model",
+    "embedding_base_url": "embedding_base_url",
     "mem0_llm_provider": "mem0_llm_provider",
     "mem0_llm_model": "mem0_llm_model",
     "mem0_embedder_provider": "mem0_embedder_provider",

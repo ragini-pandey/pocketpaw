@@ -29,6 +29,11 @@ def create_memory_store(
     ollama_base_url: str = "http://localhost:11434",
     anthropic_api_key: str | None = None,
     openai_api_key: str | None = None,
+    file_vector_enabled: bool = True,
+    vector_store_name: str = "sqlite-vec",
+    embedding_provider: str = "ollama",
+    embedding_model: str = "nomic-embed-text",
+    embedding_base_url: str = "http://localhost:11434",
 ) -> MemoryStoreProtocol:
     """
     Factory function to create the appropriate memory store.
@@ -78,9 +83,17 @@ def create_memory_store(
                 "Install with: pip install pocketpaw[memory]"
             )
             return FileMemoryStore(base_path)
-    else:
-        logger.info("Using file-based memory backend")
-        return FileMemoryStore(base_path)
+    logger.info("Using file-based memory backend")
+    # Backward compatibility: legacy "vector" backend now maps to file+vector mode.
+    resolved_vector_enabled = file_vector_enabled or backend == "vector"
+    return FileMemoryStore(
+        base_path,
+        vector_enabled=resolved_vector_enabled,
+        vector_store=vector_store_name,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
+        embedding_base_url=embedding_base_url,
+    )
 
 
 class MemoryManager:
@@ -118,6 +131,11 @@ class MemoryManager:
         ollama_base_url: str = "http://localhost:11434",
         anthropic_api_key: str | None = None,
         openai_api_key: str | None = None,
+        file_vector_enabled: bool = True,
+        vector_store_name: str = "sqlite-vec",
+        embedding_provider: str = "ollama",
+        embedding_model: str = "nomic-embed-text",
+        embedding_base_url: str = "http://localhost:11434",
     ):
         """
         Initialize memory manager.
@@ -151,6 +169,11 @@ class MemoryManager:
                 ollama_base_url=ollama_base_url,
                 anthropic_api_key=anthropic_api_key,
                 openai_api_key=openai_api_key,
+                file_vector_enabled=file_vector_enabled,
+                vector_store_name=vector_store_name,
+                embedding_provider=embedding_provider,
+                embedding_model=embedding_model,
+                embedding_base_url=embedding_base_url,
             )
 
     # =========================================================================
@@ -740,6 +763,11 @@ def get_memory_manager(force_reload: bool = False) -> MemoryManager:
             ollama_base_url=settings.mem0_ollama_base_url,
             anthropic_api_key=settings.anthropic_api_key,
             openai_api_key=settings.openai_api_key,
+            file_vector_enabled=settings.file_vector_enabled,
+            vector_store_name=settings.vector_store,
+            embedding_provider=settings.embedding_provider,
+            embedding_model=settings.embedding_model,
+            embedding_base_url=settings.embedding_base_url,
         )
 
         from pocketpaw.lifecycle import register

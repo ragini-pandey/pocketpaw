@@ -10,9 +10,12 @@
 # - ~/.pocketpaw/memory/sessions/_index.json (session metadata index)
 
 import asyncio
+import hashlib
 import json
 import logging
+import math
 import re
+import sqlite3
 import uuid
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -162,7 +165,16 @@ class FileMemoryStore:
     JSON for session memories (machine-readable).
     """
 
-    def __init__(self, base_path: Path | None = None):
+    def __init__(
+        self,
+        base_path: Path | None = None,
+        *,
+        vector_enabled: bool = True,
+        vector_store: str = "sqlite-vec",
+        embedding_model: str = "nomic-embed-text",
+        embedding_provider: str = "ollama",
+        embedding_base_url: str = "http://localhost:11434",
+    ):
         self.base_path = base_path or (Path.home() / ".pocketpaw" / "memory")
         self.base_path.mkdir(parents=True, exist_ok=True)
 
@@ -179,15 +191,376 @@ class FileMemoryStore:
         self._session_index_lock = asyncio.Lock()  # Protects _index.json read-modify-write
         self._alias_lock = asyncio.Lock()  # Protects _aliases.json read-modify-write
 
+        # Vector-backed semantic memory (phase 1)
+        self._vector_enabled = vector_enabled
+        self._vector_store = vector_store.strip().lower()
+        self._embedding_model = embedding_model
+        self._embedding_provider = embedding_provider.strip().lower()
+        self._embedding_base_url = embedding_base_url
+        self._vector_lock = asyncio.Lock()
+        self._vector_db_path = self.base_path / "vector_index.sqlite3"
+        self._vector_backend = "none"
+        self._chroma_collection = None
+
         # Inverted index for O(k) search narrowing (word -> set of entry IDs)
         self._inverted: dict[str, set[str]] = {}
         self._inv_dirty = True
+
+        self._initialize_vector_backend()
 
         self._load_index()
 
         # Build session index on first run (migration)
         if not self._index_path.exists():
             self.rebuild_session_index()
+
+    def _initialize_vector_backend(self) -> None:
+        """Initialize vector backend for semantic retrieval.
+
+        Keeps markdown storage as source of truth and augments it with vector search.
+        """
+        if not self._vector_enabled:
+            self._vector_backend = "disabled"
+            return
+
+        if self._vector_store == "chromadb":
+            try:
+                import importlib
+
+                chromadb = importlib.import_module("chromadb")
+
+                chroma_path = self.base_path / "chroma_db"
+                chroma_path.mkdir(parents=True, exist_ok=True)
+                client = chromadb.PersistentClient(path=str(chroma_path))
+                self._chroma_collection = client.get_or_create_collection(
+                    name="pocketpaw_file_memory"
+                )
+                self._vector_backend = "chromadb"
+                return
+            except ImportError:
+                logger.warning(
+                    "vector_store=chromadb requested but chromadb is not installed; "
+                    "falling back to sqlite-vec style local index"
+                )
+
+        if self._vector_store == "qdrant":
+            logger.warning(
+                "vector_store=qdrant requested for file backend; "
+                "using sqlite-vec style local index for now"
+            )
+
+        self._initialize_sqlite_vector_store()
+        self._vector_backend = "sqlite-vec"
+
+    def _initialize_sqlite_vector_store(self) -> None:
+        """Initialize local sqlite vector table (embeddings stored as JSON)."""
+        with sqlite3.connect(self._vector_db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS memory_vectors (
+                    doc_id TEXT PRIMARY KEY,
+                    content TEXT NOT NULL,
+                    memory_type TEXT NOT NULL,
+                    user_scope TEXT NOT NULL,
+                    session_key TEXT,
+                    role TEXT,
+                    created_at TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    embedding_json TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_vectors_user_scope "
+                "ON memory_vectors(user_scope)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_vectors_type "
+                "ON memory_vectors(memory_type)"
+            )
+
+    @staticmethod
+    def _hash_embedding(text: str, dim: int = 384) -> list[float]:
+        """Deterministic local embedding fallback (no network/deps)."""
+        tokens = _tokenize(text)
+        if not tokens:
+            return [0.0] * dim
+
+        vector = [0.0] * dim
+        for token in tokens:
+            digest = hashlib.sha256(token.encode("utf-8")).digest()
+            index = int.from_bytes(digest[:4], "big") % dim
+            sign = 1.0 if digest[4] % 2 == 0 else -1.0
+            weight = 1.0 + (digest[5] / 255.0)
+            vector[index] += sign * weight
+
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm <= 1e-12:
+            return vector
+        return [value / norm for value in vector]
+
+    @staticmethod
+    def _cosine_similarity(left: list[float], right: list[float]) -> float:
+        """Cosine similarity for equal-length vectors."""
+        if len(left) != len(right) or not left:
+            return 0.0
+        return sum(a * b for a, b in zip(left, right, strict=False))
+
+    async def _embed_text(self, text: str) -> list[float]:
+        """Embed text using configured provider, falling back to local hash embedding."""
+        if self._embedding_provider == "ollama":
+            try:
+                import ollama
+
+                client = ollama.AsyncClient(host=self._embedding_base_url)
+                result = await client.embeddings(model=self._embedding_model, prompt=text)
+                embedding = result.get("embedding") if isinstance(result, dict) else None
+                if isinstance(embedding, list) and embedding:
+                    return [float(value) for value in embedding]
+            except Exception:
+                logger.debug("Ollama embedding failed, using local hash embedding", exc_info=True)
+
+        return self._hash_embedding(text)
+
+    def _entry_user_scope(self, entry: MemoryEntry) -> str:
+        """Resolve memory ownership scope for semantic retrieval."""
+        metadata = entry.metadata or {}
+        if entry.type == MemoryType.LONG_TERM:
+            return str(metadata.get("user_id", "default"))
+        if entry.type == MemoryType.SESSION:
+            return str(metadata.get("sender_id", metadata.get("user_id", "default")))
+        return "default"
+
+    async def _upsert_vector_record(self, entry: MemoryEntry) -> None:
+        """Insert or update vector record for a memory entry."""
+        if not self._vector_enabled:
+            return
+
+        user_scope = self._entry_user_scope(entry)
+        metadata_json = json.dumps(entry.metadata or {}, ensure_ascii=False)
+        created_at_iso = _ensure_utc(entry.created_at).isoformat()
+
+        if self._vector_backend == "chromadb" and self._chroma_collection is not None:
+            chroma_meta = {
+                "memory_type": entry.type.value,
+                "user_scope": user_scope,
+                "session_key": entry.session_key or "",
+                "role": entry.role or "",
+                "created_at": created_at_iso,
+                "metadata_json": metadata_json,
+            }
+
+            await asyncio.to_thread(
+                self._chroma_collection.upsert,
+                ids=[entry.id],
+                documents=[entry.content],
+                metadatas=[chroma_meta],
+            )
+            return
+
+        embedding = await self._embed_text(entry.content)
+
+        async with self._vector_lock:
+            await asyncio.to_thread(
+                self._upsert_sqlite_vector_record,
+                entry,
+                user_scope,
+                created_at_iso,
+                metadata_json,
+                embedding,
+            )
+
+    def _upsert_sqlite_vector_record(
+        self,
+        entry: MemoryEntry,
+        user_scope: str,
+        created_at_iso: str,
+        metadata_json: str,
+        embedding: list[float],
+    ) -> None:
+        """Upsert vector record into local sqlite vector table."""
+        with sqlite3.connect(self._vector_db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO memory_vectors (
+                    doc_id, content, memory_type, user_scope, session_key,
+                    role, created_at, metadata_json, embedding_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(doc_id) DO UPDATE SET
+                    content = excluded.content,
+                    memory_type = excluded.memory_type,
+                    user_scope = excluded.user_scope,
+                    session_key = excluded.session_key,
+                    role = excluded.role,
+                    created_at = excluded.created_at,
+                    metadata_json = excluded.metadata_json,
+                    embedding_json = excluded.embedding_json
+                """,
+                (
+                    entry.id,
+                    entry.content,
+                    entry.type.value,
+                    user_scope,
+                    entry.session_key,
+                    entry.role,
+                    created_at_iso,
+                    metadata_json,
+                    json.dumps(embedding),
+                ),
+            )
+
+    async def _delete_vector_record(self, entry_id: str) -> None:
+        """Delete a vector record by entry ID."""
+        if not self._vector_enabled:
+            return
+
+        if self._vector_backend == "chromadb" and self._chroma_collection is not None:
+            await asyncio.to_thread(self._chroma_collection.delete, ids=[entry_id])
+            return
+
+        async with self._vector_lock:
+            await asyncio.to_thread(self._delete_sqlite_vector_record, entry_id)
+
+    def _delete_sqlite_vector_record(self, entry_id: str) -> None:
+        """Delete a vector record from sqlite store."""
+        with sqlite3.connect(self._vector_db_path) as conn:
+            conn.execute("DELETE FROM memory_vectors WHERE doc_id = ?", (entry_id,))
+
+    async def semantic_search(
+        self,
+        query: str,
+        user_id: str = "default",
+        limit: int = 5,
+    ) -> list[dict]:
+        """Semantic search for relevant memories.
+
+        Returns list of dicts compatible with MemoryManager.get_semantic_context().
+        """
+        if not query.strip():
+            return []
+
+        if self._vector_enabled:
+            try:
+                await self._backfill_missing_vector_records()
+                if self._vector_backend == "chromadb" and self._chroma_collection is not None:
+                    return await self._semantic_search_chromadb(query, user_id=user_id, limit=limit)
+                return await self._semantic_search_sqlite(query, user_id=user_id, limit=limit)
+            except Exception:
+                logger.debug("Vector semantic search failed; using lexical fallback", exc_info=True)
+
+        lexical = await self.search(query=query, limit=limit)
+        return [
+            {
+                "id": entry.id,
+                "memory": entry.content,
+                "score": 0.0,
+                "memory_type": entry.type.value,
+            }
+            for entry in lexical
+        ]
+
+    async def _backfill_missing_vector_records(self, max_items: int = 250) -> None:
+        """Lazily vectorize historical in-memory entries not present in vector store."""
+        if not self._vector_enabled:
+            return
+
+        # Chroma backend can upsert duplicates safely and handles id conflicts internally.
+        if self._vector_backend == "chromadb" and self._chroma_collection is not None:
+            pending = list(self._index.values())[:max_items]
+            for entry in pending:
+                await self._upsert_vector_record(entry)
+            return
+
+        def _get_existing_ids() -> set[str]:
+            with sqlite3.connect(self._vector_db_path) as conn:
+                rows = conn.execute("SELECT doc_id FROM memory_vectors").fetchall()
+            return {str(row[0]) for row in rows}
+
+        existing_ids = await asyncio.to_thread(_get_existing_ids)
+        pending: list[MemoryEntry] = []
+        for entry_id, entry in self._index.items():
+            if entry_id not in existing_ids:
+                pending.append(entry)
+            if len(pending) >= max_items:
+                break
+
+        for entry in pending:
+            await self._upsert_vector_record(entry)
+
+    async def _semantic_search_chromadb(self, query: str, user_id: str, limit: int) -> list[dict]:
+        """Semantic search using chromadb backend."""
+        where = {"user_scope": user_id}
+        result = await asyncio.to_thread(
+            self._chroma_collection.query,
+            query_texts=[query],
+            n_results=limit,
+            where=where,
+        )
+
+        ids = result.get("ids", [[]])[0] if result else []
+        docs = result.get("documents", [[]])[0] if result else []
+        metas = result.get("metadatas", [[]])[0] if result else []
+        distances = result.get("distances", [[]])[0] if result else []
+
+        rows: list[dict] = []
+        for index, doc_id in enumerate(ids):
+            distance = float(distances[index]) if index < len(distances) else 1.0
+            score = max(0.0, 1.0 - distance)
+            meta = metas[index] if index < len(metas) and isinstance(metas[index], dict) else {}
+            memory_text = docs[index] if index < len(docs) else ""
+            rows.append(
+                {
+                    "id": doc_id,
+                    "memory": memory_text,
+                    "score": score,
+                    "memory_type": meta.get("memory_type", "unknown"),
+                }
+            )
+
+        return rows
+
+    async def _semantic_search_sqlite(self, query: str, user_id: str, limit: int) -> list[dict]:
+        """Semantic search using local sqlite vector table."""
+        query_embedding = await self._embed_text(query)
+
+        def _search_sync() -> list[dict]:
+            with sqlite3.connect(self._vector_db_path) as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT doc_id, content, memory_type, embedding_json
+                    FROM memory_vectors
+                    WHERE user_scope = ?
+                    """,
+                    (user_id,),
+                )
+                rows = cursor.fetchall()
+
+            scored: list[tuple[float, dict]] = []
+            for doc_id, content, memory_type, embedding_json in rows:
+                try:
+                    embedding = json.loads(embedding_json)
+                    if not isinstance(embedding, list):
+                        continue
+                    score = self._cosine_similarity(query_embedding, [float(v) for v in embedding])
+                    scored.append(
+                        (
+                            score,
+                            {
+                                "id": doc_id,
+                                "memory": content,
+                                "score": score,
+                                "memory_type": memory_type,
+                            },
+                        )
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+
+            scored.sort(key=lambda item: item[0], reverse=True)
+            return [payload for _, payload in scored[:limit]]
+
+        return await asyncio.to_thread(_search_sync)
 
     # =========================================================================
     # Session Index
@@ -384,9 +757,22 @@ class FileMemoryStore:
         if not session_file.exists():
             return False
 
+        entry_ids: list[str] = []
+        try:
+            raw = await asyncio.to_thread(lambda: session_file.read_text(encoding="utf-8"))
+            data = json.loads(raw)
+            if isinstance(data, list):
+                entry_ids = [str(item.get("id", "")) for item in data if item.get("id")]
+        except (OSError, json.JSONDecodeError):
+            entry_ids = []
+
         session_file.unlink()
         if compaction_file.exists():
             compaction_file.unlink()
+
+        for entry_id in entry_ids:
+            await self._delete_vector_record(entry_id)
+            self._index.pop(entry_id, None)
 
         # Remove from index (protected by lock to prevent lost updates)
         async with self._session_index_lock:
@@ -572,6 +958,7 @@ class FileMemoryStore:
             entry.updated_at = datetime.now(tz=UTC)
             self._index[entry.id] = entry
             await self._save_session_entry(entry)
+            await self._upsert_vector_record(entry)
             return entry.id
 
         # For LONG_TERM and DAILY: compute deterministic ID from content
@@ -596,6 +983,7 @@ class FileMemoryStore:
 
         # Persist to markdown
         await self._append_to_markdown(target_path, entry)
+        await self._upsert_vector_record(entry)
 
         return entry.id
 
@@ -680,6 +1068,8 @@ class FileMemoryStore:
         source = entry.metadata.get("source")
         if source:
             self._rewrite_markdown(Path(source))
+
+        await self._delete_vector_record(entry_id)
 
         return True
 
@@ -815,17 +1205,22 @@ class FileMemoryStore:
         """Clear session history."""
         session_file = self._get_session_file(session_key)
 
-        def _clear():
+        def _clear() -> tuple[int, list[str]]:
             if session_file.exists():
                 try:
                     data = json.loads(session_file.read_text(encoding="utf-8"))
                     count = len(data)
+                    ids = [str(item.get("id", "")) for item in data if item.get("id")]
                     session_file.unlink()
-                    return count
+                    return count, ids
                 except json.JSONDecodeError as exc:
                     logger.warning("Corrupt session file removed %s: %s", session_file, exc)
                     session_file.unlink()
-                    return 0
-            return 0
+                    return 0, []
+            return 0, []
 
-        return await asyncio.to_thread(_clear)
+        count, entry_ids = await asyncio.to_thread(_clear)
+        for entry_id in entry_ids:
+            await self._delete_vector_record(entry_id)
+            self._index.pop(entry_id, None)
+        return count

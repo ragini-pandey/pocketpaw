@@ -608,3 +608,81 @@ class TestContextLimits:
         context = await manager.get_context_for_agent(max_chars=500)
         assert len(context) <= 520  # 500 + "...(truncated)" suffix
         assert "(truncated)" in context
+
+
+# ===========================================================================
+# TestFileVectorSemanticSearch
+# ===========================================================================
+
+
+class TestFileVectorSemanticSearch:
+    """Phase 1: file backend is markdown + vector retrieval."""
+
+    async def test_semantic_search_returns_relevant_memory(self, tmp_path):
+        store = FileMemoryStore(
+            base_path=tmp_path,
+            vector_enabled=True,
+            embedding_provider="hash",
+        )
+
+        await store.save(
+            MemoryEntry(
+                id="",
+                type=MemoryType.LONG_TERM,
+                content="API refactor should preserve backward compatibility",
+                metadata={"header": "Architecture"},
+            )
+        )
+        await store.save(
+            MemoryEntry(
+                id="",
+                type=MemoryType.LONG_TERM,
+                content="Buy groceries tomorrow morning",
+                metadata={"header": "Personal"},
+            )
+        )
+
+        results = await store.semantic_search("api backward compatibility", user_id="default")
+        assert len(results) >= 1
+        assert "API refactor" in results[0]["memory"]
+
+    async def test_delete_removes_vector_record(self, tmp_path):
+        store = FileMemoryStore(
+            base_path=tmp_path,
+            vector_enabled=True,
+            embedding_provider="hash",
+        )
+
+        entry_id = await store.save(
+            MemoryEntry(
+                id="",
+                type=MemoryType.LONG_TERM,
+                content="Legacy deployment issue in staging",
+                metadata={"header": "Deploy"},
+            )
+        )
+
+        before = await store.semantic_search("deployment issue", user_id="default")
+        assert any(item["id"] == entry_id for item in before)
+
+        assert await store.delete(entry_id) is True
+
+        after = await store.semantic_search("deployment issue", user_id="default")
+        assert all(item["id"] != entry_id for item in after)
+
+    async def test_manager_uses_file_semantic_context(self, tmp_path):
+        store = FileMemoryStore(
+            base_path=tmp_path,
+            vector_enabled=True,
+            embedding_provider="hash",
+        )
+        manager = MemoryManager(store=store)
+
+        await manager.remember(
+            "Project Phoenix uses React and TypeScript",
+            header="Project",
+        )
+
+        context = await manager.get_semantic_context("what stack does project phoenix use")
+        assert "Relevant Memories" in context
+        assert "React" in context
