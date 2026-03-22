@@ -572,8 +572,12 @@ async def _validate_channel_tokens(channel: str, config: dict) -> str | None:
 
     elif channel == "discord":
         bot_token = config.get("bot_token", "")
-        if bot_token and len(bot_token) < 50:
-            return "Invalid Discord bot token. Token appears too short."
+        if bot_token:
+            # Discord tokens: 59-68 chars, alphanumeric + underscores + hyphens
+            import re
+            discord_token_pattern = re.compile(r'^[A-Za-z0-9_-]{59,68}$')
+            if not discord_token_pattern.match(bot_token):
+                return "Invalid Discord bot token format. Expected 59-68 characters with letters, numbers, underscores, and hyphens."
 
     elif channel == "telegram":
         bot_token = config.get("bot_token", "")
