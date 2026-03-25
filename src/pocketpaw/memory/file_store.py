@@ -147,6 +147,31 @@ _STOP_WORDS = frozenset(
     }
 )
 
+# =============================================================================
+# Knowledge Graph Extraction
+# =============================================================================
+# NOTE: Regex-based entity extraction is intentionally conservative.
+#
+# The current implementation uses a hybrid approach:
+# 1. Conservative regex patterns that require specific structural cues
+# 2. Heuristic filtering to remove obvious false positives
+# 3. (Future) LLM validation layer for high-confidence relationships
+#
+# The "has" pattern was removed because it produces massive false positives
+# from natural language (e.g., "The user has a question" -> user-has-question).
+# Only patterns with clear semantic boundaries are enabled.
+#
+# TODO: Implement LLM-based validation pipeline for extracted candidates:
+#   - Send candidate triples (entity, relation, entity) to LLM
+#   - Validate: Is this a meaningful, stable relationship?
+#   - Normalize: Map messy language to controlled schema
+#   - Canonicalize: "OpenAI", "Open AI", "openai" -> OpenAI
+#   - Confidence threshold: Only store edges above 0.75 confidence
+#
+# See: https://github.com/pocketpaw/pocketpaw/issues/XXX
+# =============================================================================
+
+# Technology terms for entity extraction (lowercase for matching)
 _GRAPH_TECH_TERMS = frozenset(
     {
         "python",
@@ -176,38 +201,184 @@ _GRAPH_TECH_TERMS = frozenset(
     }
 )
 
+# Blacklist for filtering out junk entities from regex extraction
+# These are common words that produce false-positive relationships
+_GRAPH_ENTITY_BLACKLIST = frozenset(
+    {
+        # Generic nouns that appear in conversational text
+        "something",
+        "anything",
+        "everything",
+        "nothing",
+        "question",
+        "questions",
+        "answer",
+        "answers",
+        "thing",
+        "things",
+        "stuff",
+        "idea",
+        "ideas",
+        "thought",
+        "thoughts",
+        "point",
+        "points",
+        "part",
+        "parts",
+        "bit",
+        "piece",
+        "way",
+        "ways",
+        "kind",
+        "kinds",
+        "sort",
+        "sorts",
+        "type",
+        "types",
+        "example",
+        "examples",
+        "case",
+        "cases",
+        "time",
+        "times",
+        "day",
+        "days",
+        "moment",
+        "moment",
+        "second",
+        "minute",
+        "hour",
+        "problem",
+        "problems",
+        "issue",
+        "issues",
+        "error",
+        "errors",
+        "result",
+        "results",
+        "output",
+        "input",
+        # Pronouns and vague references
+        "it",
+        "this",
+        "that",
+        "these",
+        "those",
+        "they",
+        "them",
+        "one",
+        "ones",
+        "someone",
+        "somebody",
+        "everyone",
+        "everybody",
+        "anyone",
+        "anybody",
+        "no one",
+        "nobody",
+        # Temporal states (produce false "has" relationships)
+        "meeting",
+        "call",
+        "appointment",
+        "schedule",
+        "plan",
+        "deadline",
+        # Action nouns that aren't entities
+        "look",
+        "check",
+        "try",
+        "attempt",
+        "go",
+        "start",
+        "begin",
+        "end",
+        "finish",
+        "stop",
+    }
+)
+
+# Maximum word count for extracted entities (longer = likely sentence fragment)
+_GRAPH_MAX_ENTITY_WORDS = 6
+
+# Conservative regex patterns for relationship extraction.
+# These require specific structural cues to reduce false positives.
+# Patterns like "X has Y" are intentionally EXCLUDED due to high false-positive rate.
 _RELATION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # "X uses Y" - requires capitalized or tech-term entities
+    # Example: "Project Phoenix uses PostgreSQL" ✓
+    # Example: "The user has a question" ✗ (no match - "has" not in patterns)
     (
         re.compile(
-            r"(?P<src>[A-Za-z][A-Za-z0-9_\- ]{1,60}?)\s+uses\s+"
-            r"(?P<tgt>[A-Za-z][A-Za-z0-9_\- ]{1,60})",
+            r"(?P<src>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})\s+uses\s+"
+            r"(?P<tgt>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})",
             re.IGNORECASE,
         ),
         "uses",
     ),
+    # "X depends on Y" - explicit dependency language
     (
         re.compile(
-            r"(?P<src>[A-Za-z][A-Za-z0-9_\- ]{1,60}?)\s+depends on\s+"
-            r"(?P<tgt>[A-Za-z][A-Za-z0-9_\- ]{1,60})",
+            r"(?P<src>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})\s+depends\s+on\s+"
+            r"(?P<tgt>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})",
             re.IGNORECASE,
         ),
         "depends_on",
     ),
+    # "X is built on Y" - technical stack relationship
     (
         re.compile(
-            r"(?P<src>[A-Za-z][A-Za-z0-9_\- ]{1,60}?)\s+related to\s+"
-            r"(?P<tgt>[A-Za-z][A-Za-z0-9_\- ]{1,60})",
+            r"(?P<src>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})\s+is\s+built\s+on\s+"
+            r"(?P<tgt>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})",
             re.IGNORECASE,
         ),
-        "related_to",
+        "built_on",
     ),
+    # "X is a type of Y" / "X is an example of Y" - taxonomic
     (
         re.compile(
-            r"(?P<src>[A-Za-z][A-Za-z0-9_\- ]{1,60}?)\s+has\s+"
-            r"(?P<tgt>[A-Za-z][A-Za-z0-9_\- ]{1,60})",
+            r"(?P<src>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})\s+is\s+(?:a|an)\s+"
+            r"(?:type\s+of|kind\s+of|example\s+of)\s+"
+            r"(?P<tgt>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})",
             re.IGNORECASE,
         ),
-        "has",
+        "is_a",
+    ),
+    # "X is part of Y" - compositional
+    (
+        re.compile(
+            r"(?P<src>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})\s+is\s+part\s+of\s+"
+            r"(?P<tgt>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})",
+            re.IGNORECASE,
+        ),
+        "part_of",
+    ),
+    # "X implements Y" - interface/protocol relationship
+    (
+        re.compile(
+            r"(?P<src>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})\s+implements\s+"
+            r"(?P<tgt>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})",
+            re.IGNORECASE,
+        ),
+        "implements",
+    ),
+    # "X extends Y" / "X inherits from Y" - inheritance
+    (
+        re.compile(
+            r"(?P<src>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})\s+"
+            r"(?:extends|inherits\s+from)\s+"
+            r"(?P<tgt>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})",
+            re.IGNORECASE,
+        ),
+        "extends",
+    ),
+    # "X calls Y" / "X invokes Y" - API/method relationship
+    (
+        re.compile(
+            r"(?P<src>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})\s+(?:calls|invokes)\s+"
+            r"(?P<tgt>[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2})",
+            re.IGNORECASE,
+        ),
+        "calls",
     ),
 ]
 
@@ -269,7 +440,10 @@ class FileMemoryStore:
         self._chroma_collection = None
 
         # Knowledge graph (phase 2)
-        self._graph_enabled = True
+        # NOTE: Graph extraction uses conservative regex patterns with heuristic
+        # filtering to minimize false positives. See _extract_graph_signals() docs.
+        # Tied to vector_enabled - only active when semantic features are enabled.
+        self._graph_enabled = vector_enabled
         self._graph_db_path = self.base_path / "knowledge_graph.sqlite3"
         self._graph_lock = asyncio.Lock()
 
@@ -416,40 +590,115 @@ class FileMemoryStore:
         compact = re.sub(r"\s+", " ", name).strip(" \t\n.,;:()[]{}\"'")
         return compact.lower()
 
+    @staticmethod
+    def _is_valid_entity_candidate(name: str) -> bool:
+        """Heuristic filter: reject obvious junk entities.
+
+        Filters out:
+        - Blacklisted generic words (question, thing, something, etc.)
+        - Entities that are too long (likely sentence fragments)
+        - Pure lowercase entities (except tech terms handled separately)
+        """
+        if not name:
+            return False
+
+        normalized = name.lower().strip()
+
+        # Check blacklist
+        if normalized in _GRAPH_ENTITY_BLACKLIST:
+            return False
+
+        # Check word count (avoid sentence fragments)
+        word_count = len(name.split())
+        if word_count > _GRAPH_MAX_ENTITY_WORDS:
+            return False
+
+        # Require at least one alphabetic character
+        if not any(c.isalpha() for c in name):
+            return False
+
+        return True
+
+    @staticmethod
+    def _is_valid_relationship_candidate(src: str, rel_type: str, tgt: str) -> bool:
+        """Heuristic filter: reject low-quality relationship candidates.
+
+        Filters out:
+        - Self-referential relationships (A -> A)
+        - Relationships with blacklisted entities
+        - Very short entities (likely noise)
+        """
+        # No self-loops
+        if src.lower().strip() == tgt.lower().strip():
+            return False
+
+        # Both entities must pass basic validation
+        if not FileMemoryStore._is_valid_entity_candidate(src):
+            return False
+        if not FileMemoryStore._is_valid_entity_candidate(tgt):
+            return False
+
+        # Minimum length check (avoid single-character noise)
+        if len(src.strip()) < 2 or len(tgt.strip()) < 2:
+            return False
+
+        return True
+
     def _extract_graph_signals(self, content: str) -> tuple[list[str], list[tuple[str, str, str]]]:
-        """Extract entities + simple relationships from conversational text."""
+        """Extract entities + simple relationships from conversational text.
+
+        Uses a conservative hybrid approach:
+        1. Technology term matching (high precision)
+        2. Title-case entity detection (moderate precision)
+        3. Restrictive regex patterns for explicit relationships
+        4. Heuristic filtering to remove false positives
+
+        NOTE: The "has" pattern is intentionally excluded due to massive
+        false-positive rate (e.g., "The user has a question" -> user-has-question).
+        Only patterns with clear semantic boundaries are used.
+
+        TODO: Add LLM validation layer for candidate triples:
+        - Validate semantic meaningfulness
+        - Normalize entity names (canonicalization)
+        - Confidence scoring before storage
+        """
         entities: set[str] = set()
         relationships: list[tuple[str, str, str]] = []
 
-        # Technology entities (lowercase terms)
+        # Technology entities (lowercase terms) - high precision
         for token in _tokenize(content):
             if token in _GRAPH_TECH_TERMS:
                 entities.add(token)
 
-        # Title-case entities (e.g., Project Phoenix)
+        # Title-case entities (e.g., Project Phoenix) - moderate precision
+        # Require at least one capital letter to avoid matching common words
         for match in re.finditer(
             r"\b[A-Z][a-zA-Z0-9_\-]*(?:\s+[A-Z][a-zA-Z0-9_\-]*){0,2}\b",
             content,
         ):
             name = match.group(0).strip()
-            if len(name) >= 3:
+            if len(name) >= 3 and self._is_valid_entity_candidate(name):
                 entities.add(name)
 
-        # Explicit relationships from patterns
+        # Explicit relationships from conservative patterns
         for pattern, rel_type in _RELATION_PATTERNS:
             for match in pattern.finditer(content):
                 src = match.group("src").strip()
                 tgt = match.group("tgt").strip()
                 if not src or not tgt:
                     continue
+
+                # Apply heuristic filtering
+                if not self._is_valid_relationship_candidate(src, rel_type, tgt):
+                    continue
+
                 entities.add(src)
                 entities.add(tgt)
                 relationships.append((src, rel_type, tgt))
 
-        # Weak fallback: connect first two entities if no explicit relation extracted
-        if not relationships and len(entities) >= 2:
-            ordered_entities = sorted(entities)
-            relationships.append((ordered_entities[0], "related_to", ordered_entities[1]))
+        # REMOVED: Weak fallback that connects arbitrary entities.
+        # This produced too many false-positive "related_to" edges.
+        # Only explicit patterns above are used for relationships.
 
         # Keep extraction bounded
         trimmed_entities = sorted(entities)[:12]

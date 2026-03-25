@@ -85,6 +85,7 @@ def create_memory_store(
             return FileMemoryStore(base_path)
     logger.info("Using file-based memory backend")
     # Backward compatibility: legacy "vector" backend now maps to file+vector mode.
+    # Graph extraction is tied to vector_enabled - only active when semantic features on.
     resolved_vector_enabled = file_vector_enabled or backend == "vector"
     return FileMemoryStore(
         base_path,

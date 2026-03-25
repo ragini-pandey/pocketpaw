@@ -411,7 +411,8 @@ class Settings(BaseSettings):
         default=False,
         description=(
             "Enable vector indexing and semantic retrieval for file memory backend "
-            "(opt-in)"
+            "(opt-in). Also enables knowledge graph extraction with conservative "
+            "regex patterns and heuristic filtering."
         ),
     )
     vector_store: str = Field(
