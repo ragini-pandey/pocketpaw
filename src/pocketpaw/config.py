@@ -408,8 +408,11 @@ class Settings(BaseSettings):
         description="Auto-extract facts from conversations for file memory backend (uses Haiku)",
     )
     file_vector_enabled: bool = Field(
-        default=True,
-        description="Enable vector indexing and semantic retrieval for file memory backend",
+        default=False,
+        description=(
+            "Enable vector indexing and semantic retrieval for file memory backend "
+            "(opt-in)"
+        ),
     )
     vector_store: str = Field(
         default="sqlite-vec",

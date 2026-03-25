@@ -123,7 +123,7 @@ function app() {
             selfAuditEnabled: true,
             selfAuditSchedule: '0 3 * * *',
             memoryBackend: 'file',
-            fileVectorEnabled: true,
+            fileVectorEnabled: false,
             vectorStore: 'sqlite-vec',
             embeddingProvider: 'ollama',
             embeddingModel: 'nomic-embed-text',
