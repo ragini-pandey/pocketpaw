@@ -28,6 +28,7 @@ def _playwright_browsers_installed() -> bool:
     """Check if Playwright browsers are installed."""
     try:
         from playwright.sync_api import sync_playwright
+
         with sync_playwright() as p:
             browser_path = p.chromium.executable_path
             return pathlib.Path(browser_path).exists()
@@ -53,7 +54,9 @@ def find_free_port() -> int:
 def run_dashboard(port: int):
     """Run the dashboard server in a subprocess."""
     import uvicorn
+
     from pocketpaw.dashboard import app
+
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
