@@ -11,6 +11,7 @@
 
 import asyncio
 import hashlib
+import importlib
 import json
 import logging
 import math
@@ -20,6 +21,7 @@ import uuid
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from pocketpaw._compat import require_extra
 from pocketpaw.memory.protocol import MemoryEntry, MemoryType
 
 logger = logging.getLogger(__name__)
@@ -295,8 +297,6 @@ class FileMemoryStore:
 
         if self._vector_store == "chromadb":
             try:
-                import importlib
-
                 chromadb = importlib.import_module("chromadb")
 
                 chroma_path = self.base_path / "chroma_db"
@@ -1579,11 +1579,21 @@ class FileMemoryStore:
             import math
 
             try:
-                import networkx as nx
+                nx = importlib.import_module("networkx")
             except ImportError:
+                try:
+                    require_extra("networkx", "graph")
+                except ImportError as exc:
+                    install_hint = str(exc)
+                else:
+                    install_hint = "Install graph extras to enable SVG rendering."
+
+                logger.info("Graph SVG rendering unavailable: %s", install_hint)
                 fallback_svg = (
                     '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400">'
-                    '<text x="10" y="20" fill="rgba(255,255,255,0.6)">networkx not installed</text>'
+                    '<text x="10" y="20" fill="rgba(255,255,255,0.6)">'
+                    "Graph visualization unavailable. Install pocketpaw[graph]."
+                    "</text>"
                     "</svg>"
                 )
                 return fallback_svg

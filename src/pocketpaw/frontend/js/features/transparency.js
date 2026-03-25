@@ -66,6 +66,9 @@ window.PocketPaw.Transparency = {
             memoryConfigOpen: false,
             memoryGraph: { nodes: [], edges: [] },
             memoryGraphSearch: '',
+            memoryGraphUnavailable: false,
+            memoryGraphUnavailableText: '',
+            memoryGraphInstallLoading: false,
             memoryStats: null,
             memoryPruneDays: 30,
             memoryEditingId: null,
@@ -201,12 +204,23 @@ window.PocketPaw.Transparency = {
                 fetch(url)
                     .then(r => r.text())
                     .then(svg => {
-                        container.innerHTML = svg;
+                        const graphUnavailable =
+                            svg.includes('Graph visualization unavailable') ||
+                            svg.includes('networkx not installed');
+
+                        this.memoryGraphUnavailable = graphUnavailable;
+                        this.memoryGraphUnavailableText = graphUnavailable
+                            ? "Requires networkx. Install with: pip install 'pocketpaw[graph]'"
+                            : '';
+
+                        container.innerHTML = graphUnavailable ? '' : svg;
                         // Also load JSON for entity/relationship list
                         this.loadMemoryGraphData();
                     })
                     .catch(e => {
                         console.error('Failed to load memory graph:', e);
+                        this.memoryGraphUnavailable = false;
+                        this.memoryGraphUnavailableText = '';
                         container.innerHTML = '<div style="padding: 20px; color: rgba(255,255,255,0.5);">Failed to load graph</div>';
                     });
             },
@@ -236,6 +250,49 @@ window.PocketPaw.Transparency = {
             renderMemoryGraph() {
                 // SVG is now loaded directly via loadMemoryGraph
                 // No need for any rendering logic
+            },
+
+            async installMemoryGraphDependency() {
+                this.memoryGraphInstallLoading = true;
+                try {
+                    const res = await fetch('/api/extras/install', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ extra: 'graph' })
+                    });
+                    const data = await res.json();
+
+                    if (data.error || data.detail) {
+                        this.showToast(`Install failed: ${data.error || data.detail}`, 'error');
+                        return;
+                    }
+
+                    if (data.restart_required) {
+                        const restartNow = confirm(
+                            'networkx installed. Server restart required to load it. Restart now?'
+                        );
+                        if (restartNow) {
+                            await fetch('/api/system/restart', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ confirm: true })
+                            });
+                            this.showToast('Server restarting...', 'info');
+                        } else {
+                            this.showToast('networkx installed. Restart server when ready.', 'info');
+                        }
+                        return;
+                    }
+
+                    this.showToast('networkx installed successfully', 'success');
+                    this.memoryGraphUnavailable = false;
+                    this.memoryGraphUnavailableText = '';
+                    await this.loadMemoryGraph();
+                } catch (e) {
+                    this.showToast(`Install failed: ${e.message}`, 'error');
+                } finally {
+                    this.memoryGraphInstallLoading = false;
+                }
             },
 
             loadMemoryStats() {

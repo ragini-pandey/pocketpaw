@@ -132,6 +132,7 @@ _CHANNEL_DEPS: dict[str, tuple[str, str, str]] = {
     "matrix": ("nio", "matrix-nio", "pocketpaw[matrix]"),
     "teams": ("botbuilder.core", "botbuilder-core", "pocketpaw[teams]"),
     "google_chat": ("googleapiclient.discovery", "google-api-python-client", "pocketpaw[gchat]"),
+    "graph": ("networkx", "networkx", "pocketpaw[graph]"),
 }
 
 _MEMORY_CONFIG_KEYS = {

@@ -61,13 +61,12 @@ dependencies = [
     "cryptography>=42.0",
     # Image basics
     "pillow>=10.0.0",
-    # Graph visualization (memory knowledge graph SVG generation)
-    "networkx>=3.0",
 ]
 
 [project.optional-dependencies]
 # --- Feature extras ---
 vector = ["chromadb"]
+graph = ["networkx>=3.0"]
 dashboard = [
     # Kept for backward compat — dashboard deps are now in core.
     # Users with `pip install pocketpaw[dashboard]` in scripts won't break.
@@ -205,6 +204,8 @@ all-tools = [
     # memory
     "mem0ai>=0.1.115",
     "ollama>=0.6.1",
+    # graph
+    "networkx>=3.0",
     # soul
     "soul-protocol[engine]>=0.2.4",
 ]
