@@ -2,6 +2,7 @@
 # dedup, persistent delete, ForgetTool, auto-learn, context limits.
 # Created: 2026-02-09
 
+import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -128,6 +129,27 @@ class TestUUIDCollision:
         id1 = _make_deterministic_id(p, "Memory", "Fact one")
         id2 = _make_deterministic_id(p, "Memory", "Fact one")
         assert id1 == id2
+
+
+class TestVectorSchemaMigrations:
+    """Schema version checks for sqlite vector index."""
+
+    async def test_vector_schema_migrates_user_version_on_init(self, tmp_path):
+        db_path = tmp_path / "vector_index.sqlite3"
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("PRAGMA user_version = 0")
+
+        FileMemoryStore(base_path=tmp_path, vector_enabled=True, embedding_provider="hash")
+
+        with sqlite3.connect(db_path) as conn:
+            version_row = conn.execute("PRAGMA user_version").fetchone()
+            assert version_row is not None
+            assert int(version_row[0]) == 1
+
+            columns = conn.execute("PRAGMA table_info(memory_vectors)").fetchall()
+            column_names = {str(row[1]) for row in columns}
+            assert "doc_id" in column_names
+            assert "embedding_json" in column_names
 
 
 # ===========================================================================

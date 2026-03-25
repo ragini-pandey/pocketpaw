@@ -382,6 +382,8 @@ _RELATION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
 ]
 
+_VECTOR_SCHEMA_VERSION = 1
+
 
 def _make_deterministic_id(path: Path, header: str, body: str) -> str:
     """Generate a deterministic UUID5 from path, header, AND body content."""
@@ -497,30 +499,70 @@ class FileMemoryStore:
         self._vector_backend = "sqlite-vec"
 
     def _initialize_sqlite_vector_store(self) -> None:
-        """Initialize local sqlite vector table (embeddings stored as JSON)."""
+        """Initialize and migrate local sqlite vector schema."""
         with sqlite3.connect(self._vector_db_path) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS memory_vectors (
-                    doc_id TEXT PRIMARY KEY,
-                    content TEXT NOT NULL,
-                    memory_type TEXT NOT NULL,
-                    user_scope TEXT NOT NULL,
-                    session_key TEXT,
-                    role TEXT,
-                    created_at TEXT NOT NULL,
-                    metadata_json TEXT NOT NULL,
-                    embedding_json TEXT NOT NULL
-                )
-                """
+            current_version = self._get_sqlite_user_version(conn)
+            self._migrate_vector_schema(conn, current_version, _VECTOR_SCHEMA_VERSION)
+
+    @staticmethod
+    def _get_sqlite_user_version(conn: sqlite3.Connection) -> int:
+        """Read sqlite schema version from PRAGMA user_version."""
+        row = conn.execute("PRAGMA user_version").fetchone()
+        if not row:
+            return 0
+        return int(row[0])
+
+    def _migrate_vector_schema(
+        self,
+        conn: sqlite3.Connection,
+        current_version: int,
+        target_version: int,
+    ) -> None:
+        """Apply forward-only vector schema migrations up to target_version."""
+        if current_version > target_version:
+            logger.warning(
+                "vector_index schema version %s is newer than supported %s",
+                current_version,
+                target_version,
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_memory_vectors_user_scope "
-                "ON memory_vectors(user_scope)"
+            return
+
+        while current_version < target_version:
+            next_version = current_version + 1
+            migration_name = f"_migrate_vector_schema_v{current_version}_to_v{next_version}"
+            migration = getattr(self, migration_name, None)
+            if migration is None:
+                raise RuntimeError(f"Missing vector schema migration: {migration_name}")
+
+            migration(conn)
+            conn.execute(f"PRAGMA user_version = {next_version}")
+            current_version = next_version
+
+    @staticmethod
+    def _migrate_vector_schema_v0_to_v1(conn: sqlite3.Connection) -> None:
+        """Initial vector schema for memory_vectors table and lookup indexes."""
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memory_vectors (
+                doc_id TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                memory_type TEXT NOT NULL,
+                user_scope TEXT NOT NULL,
+                session_key TEXT,
+                role TEXT,
+                created_at TEXT NOT NULL,
+                metadata_json TEXT NOT NULL,
+                embedding_json TEXT NOT NULL
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_memory_vectors_type ON memory_vectors(memory_type)"
-            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_vectors_user_scope "
+            "ON memory_vectors(user_scope)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_vectors_type ON memory_vectors(memory_type)"
+        )
 
     def _initialize_graph_store(self) -> None:
         """Initialize sqlite tables for lightweight knowledge graph."""
