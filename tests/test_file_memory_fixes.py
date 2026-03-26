@@ -919,8 +919,10 @@ class TestGraphSVGHtmlEscaping:
         now = datetime.now(UTC).isoformat()
         with sqlite3.connect(store._graph_db_path) as conn:
             conn.execute(
-                """INSERT INTO entities (entity_id, entity_key, display_name, mention_count, user_scope, first_seen, last_seen)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO entities
+                (entity_id, entity_key, display_name, mention_count, user_scope,
+                first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     "entity_1",
                     "test<entity",
@@ -950,8 +952,10 @@ class TestGraphSVGHtmlEscaping:
         now = datetime.now(UTC).isoformat()
         with sqlite3.connect(store._graph_db_path) as conn:
             conn.execute(
-                """INSERT INTO entities (entity_id, entity_key, display_name, mention_count, user_scope, first_seen, last_seen)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO entities
+                (entity_id, entity_key, display_name, mention_count, user_scope,
+                first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     "entity_1",
                     "value>100",
@@ -980,8 +984,10 @@ class TestGraphSVGHtmlEscaping:
         now = datetime.now(UTC).isoformat()
         with sqlite3.connect(store._graph_db_path) as conn:
             conn.execute(
-                """INSERT INTO entities (entity_id, entity_key, display_name, mention_count, user_scope, first_seen, last_seen)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO entities
+                (entity_id, entity_key, display_name, mention_count, user_scope,
+                first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     "entity_1",
                     "dogs&cats",
@@ -1011,19 +1017,25 @@ class TestGraphSVGHtmlEscaping:
         now = datetime.now(UTC).isoformat()
         with sqlite3.connect(store._graph_db_path) as conn:
             conn.execute(
-                """INSERT INTO entities (entity_id, entity_key, display_name, mention_count, user_scope, first_seen, last_seen)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO entities
+                (entity_id, entity_key, display_name, mention_count, user_scope,
+                first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 ("entity_1", "python", "Python", 5, "default", now, now),
             )
             conn.execute(
-                """INSERT INTO entities (entity_id, entity_key, display_name, mention_count, user_scope, first_seen, last_seen)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO entities
+                (entity_id, entity_key, display_name, mention_count, user_scope,
+                first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 ("entity_2", "framework", "Framework", 3, "default", now, now),
             )
-            # Insert relationship (note: actual relation types are normalized, but test the escaping)
+            # Relationship with normalized types; test escaping
             conn.execute(
-                """INSERT INTO relationships (relationship_id, source_entity_id, target_entity_id, relation_type, weight, user_scope, first_seen, last_seen)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO relationships
+                (relationship_id, source_entity_id, target_entity_id,
+                relation_type, weight, user_scope, first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 ("rel_1", "entity_1", "entity_2", "uses", 0, "default", now, now),
             )
             conn.commit()
@@ -1035,7 +1047,7 @@ class TestGraphSVGHtmlEscaping:
         assert "Python" in svg or "Framework" in svg or "uses" in svg
 
     async def test_svg_without_special_chars_unchanged(self, tmp_path):
-        """Normal entity names without special chars work as before."""
+        """Normal entity names without special chars work as expected."""
         store = FileMemoryStore(
             base_path=tmp_path,
             vector_enabled=True,
@@ -1071,8 +1083,10 @@ class TestGraphSVGHtmlEscaping:
         now = datetime.now(UTC).isoformat()
         with sqlite3.connect(store._graph_db_path) as conn:
             conn.execute(
-                """INSERT INTO entities (entity_id, entity_key, display_name, mention_count, user_scope, first_seen, last_seen)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO entities
+                (entity_id, entity_key, display_name, mention_count, user_scope,
+                first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     "entity_1",
                     "test<bad>evil",
@@ -1121,4 +1135,4 @@ class TestGraphSVGHtmlEscaping:
         # Should return fallback SVG
         assert "<svg" in svg
         assert "</svg>" in svg
-        assert ("Graph visualization unavailable" in svg or "pocketpaw[graph]" in svg)
+        assert "Graph visualization unavailable" in svg or "pocketpaw[graph]" in svg
