@@ -130,14 +130,18 @@ class CredentialStore:
             return platform.node()
 
         try:
-            # Command to extract the Hardware UUID on macOS
-            cmd = (
-                "ioreg -rd1 -c IOPlatformExpertDevice | "
-                "awk '/IOPlatformUUID/ { print $3 }' | tr -d '\"'"
+            # Command to extract the Hardware UUID on macOS (safer version without shell=True)
+            output = subprocess.check_output(
+                ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"], text=True
             )
-            result = subprocess.check_output(cmd, shell=True, text=True).strip()
-            return result
-        except (subprocess.SubprocessError, Exception):
+            for line in output.splitlines():
+                if "IOPlatformUUID" in line:
+                    # Line looks like: "IOPlatformUUID" = "6D7AA782-3B61-5AF8-B622-E5586025A2DC"
+                    parts = line.split("=")
+                    if len(parts) > 1:
+                        return parts[1].strip().strip('"')
+            return platform.node()
+        except (subprocess.SubprocessError, OSError, Exception):
             return platform.node()  # Last resort fallback
 
     def _get_machine_identity(self) -> bytes:
