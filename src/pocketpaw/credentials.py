@@ -118,8 +118,16 @@ class CredentialStore:
         return platform.node()
 
     def _get_macos_hardware_uuid(self) -> str:
-        """Extract macOS hardware UUID via ioreg."""
+        """Extract macOS hardware UUID or fallback to system identifier."""
         import subprocess
+
+        # If we're obviously in a CI environment, use a stable constant
+        if os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CI") == "true":
+            return "CI_ENVIRONMENT_ID"
+
+        if platform.system() != "Darwin":
+            # Fallback for non-macOS: use platform.node() as a surrogate "uuid"
+            return platform.node()
 
         try:
             # Command to extract the Hardware UUID on macOS
@@ -130,7 +138,7 @@ class CredentialStore:
             result = subprocess.check_output(cmd, shell=True, text=True).strip()
             return result
         except (subprocess.SubprocessError, Exception):
-            return ""
+            return platform.node()  # Last resort fallback
 
     def _get_machine_identity(self) -> bytes:
         """Build a machine-bound identity string."""
