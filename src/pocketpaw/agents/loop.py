@@ -528,7 +528,9 @@ class AgentLoop:
                 # Handle mocked memory store in tests
                 message_count = 0
 
-            bootstrap_context = await self.context_builder.bootstrap.get_context()
+            bootstrap_context = self.context_builder.bootstrap.get_context()
+            if asyncio.iscoroutine(bootstrap_context):
+                bootstrap_context = await bootstrap_context
             identity_block = bootstrap_context.to_identity_block()
             system_prompt = _reinforce_identity(system_prompt, identity_block, message_count)
 
