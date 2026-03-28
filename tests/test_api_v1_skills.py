@@ -10,16 +10,6 @@ from fastapi.testclient import TestClient
 from pocketpaw.api.v1.skills import router
 
 
-def _make_asynciter(items):
-    """Return an async iterator helper for mocking."""
-
-    async def _aiter():
-        for item in items:
-            yield item
-
-    return _aiter()
-
-
 @pytest.fixture
 def test_app():
     app = FastAPI()
@@ -120,6 +110,22 @@ class TestInstallSkill:
         resp = client.post("/api/v1/skills/install", json={"source": "owner/repo/skill name!"})
         assert resp.status_code == 400
 
+    def test_install_skill_name_dotdot_blocked(self, client):
+        """skill_name='..' must be rejected to prevent path traversal."""
+        resp = client.post("/api/v1/skills/install", json={"source": "owner/repo/.."})
+        assert resp.status_code == 400
+
+    def test_install_source_too_many_parts_blocked(self, client):
+        """source.split('/') with >3 parts must be rejected."""
+        resp = client.post("/api/v1/skills/install", json={"source": "a/b/c/d"})
+        assert resp.status_code == 400
+
+    def test_install_owner_with_underscore_accepted(self, client):
+        """GitHub usernames with underscores are valid and should pass validation."""
+        resp = client.post("/api/v1/skills/install", json={"source": "user_name/repo"})
+        # Should pass validation (non-400 means validation succeeded)
+        assert resp.status_code != 400
+
     def test_install_valid_owner_repo_accepted(self, client):
         """Valid owner/repo should pass validation (git clone itself will fail in test env)."""
         # We just verify validation passes and the call reaches subprocess (which fails without git)
@@ -178,9 +184,12 @@ class TestInstallSkill:
 
             with (
                 patch("asyncio.create_subprocess_exec", side_effect=_fake_create_subprocess),
-                patch("pocketpaw.skills.get_skill_loader", return_value=mock_loader),
                 patch(
-                    "pocketpaw.security.audit.get_audit_logger",
+                    "pocketpaw.skills.installer.get_skill_loader",
+                    return_value=mock_loader,
+                ),
+                patch(
+                    "pocketpaw.skills.installer.get_audit_logger",
                     return_value=mock_audit_logger,
                 ),
                 patch("tempfile.TemporaryDirectory", return_value=mock_tmpdir_ctx),
