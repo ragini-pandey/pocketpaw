@@ -52,6 +52,19 @@ DANGEROUS_PATTERNS: list[str] = [
     # -- Data exfiltration --
     r"curl\s+.*-d\s+@/etc/",  # curl POST with system files
     r"\bnc\b.*<\s*/etc/",  # netcat with system file redirect
+    # -- Reverse shells --
+    r"\bnc\b.*-e\s+/bin/(ba)?sh",  # nc -e /bin/sh
+    r"bash\s+-i\s+>&\s+/dev/tcp/",  # bash -i >& /dev/tcp/
+    r"python[23]?\s+-c\s+.*socket.*connect",  # Python reverse shell
+    r"perl\s+-e\s+.*socket.*INET",  # Perl reverse shell
+    r"ruby\s+-rsocket\s+-e",  # Ruby reverse shell
+    # -- Crontab / scheduled task injection --
+    r"crontab\s+-[elr]",  # crontab edit/list/remove
+    r"echo\s+.*>>\s*/etc/cron",  # Append to cron dirs
+    r"\bat\b\s+\d",  # at command for scheduling
+    # -- SSH key injection --
+    r"ssh-keygen\s+.*-f\s+/",  # ssh-keygen writing to absolute path
+    r"echo\s+.*>>\s*~?/\.ssh/authorized_keys",  # Inject SSH key
     # -- System damage --
     r">\s*/etc/passwd",  # Overwrite passwd
     r">\s*/etc/shadow",  # Overwrite shadow
@@ -115,6 +128,17 @@ DANGEROUS_SUBSTRINGS: list[str] = [
     "visudo",
     # Data exfiltration
     "curl -d @/etc/",
+    # Reverse shells
+    "nc -e /bin/sh",
+    "nc -e /bin/bash",
+    "bash -i >& /dev/tcp/",
+    # Crontab / scheduled task injection
+    "crontab -e",
+    "crontab -r",
+    ">> /etc/cron",
+    # SSH key injection
+    ">> ~/.ssh/authorized_keys",
+    ">> /root/.ssh/authorized_keys",
     # Additional system damage
     "ufw disable",
     "ufw reset",

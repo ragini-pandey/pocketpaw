@@ -73,13 +73,15 @@ class A2ADelegateTool(BaseTool):
                 if not hostname:
                     return self._error("Invalid URL hostname.")
 
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
                 loop = asyncio.get_running_loop()
                 # Use getaddrinfo to get all resolved IPs (protects against multi-A record bypass)
-                addr_infos = await loop.run_in_executor(None, socket.getaddrinfo, hostname, None)
+                addr_infos = await loop.run_in_executor(None, socket.getaddrinfo, hostname, port)
 
-                # Check ALL returned IPs. Also note: DNS rebinding is mitigated by the allowlist
-                # but could theoretically happen between this check and the HTTP request if
-                # the TTL is 0. Operators should use the allowlist for full safety.
+                # Check ALL returned IPs and collect the first safe one to pin.
+                # Pinning the resolved IP prevents DNS rebinding (TOCTOU) attacks
+                # where an attacker flips DNS between this check and the HTTP request.
+                pinned_ip = None
                 for addr in addr_infos:
                     ip_str = addr[4][0]
                     ip = ipaddress.ip_address(ip_str)
@@ -96,15 +98,35 @@ class A2ADelegateTool(BaseTool):
                             "denied. Add this URL to the 'a2a_trusted_agents' allowlist in "
                             "settings to permit."
                         )
+                    if pinned_ip is None:
+                        pinned_ip = ip_str
+
+                if pinned_ip is None:
+                    return self._error(f"Could not resolve hostname '{hostname}'.")
+
+                # Rewrite the URL to use the pinned IP, preventing DNS rebinding.
+                # Pass the original hostname via the Host header so TLS and
+                # virtual-host routing still work.
+                pinned_url = agent_url.replace(hostname, pinned_ip, 1)
+                pinned_host = hostname
+
             except socket.gaierror as e:
                 return self._error(f"Could not resolve hostname '{hostname}': {e}")
             except Exception as e:
                 return self._error(f"URL validation failed: {e}")
+        else:
+            pinned_url = None
+            pinned_host = None
 
-        async with A2AClient() as client:
+        # Use pinned URL if we resolved DNS ourselves (prevents rebinding).
+        # The Host header preserves the original hostname for TLS/virtual-host routing.
+        effective_url = pinned_url if pinned_url else agent_url
+        auth_headers = {"Host": pinned_host} if pinned_host else {}
+
+        async with A2AClient(auth_headers=auth_headers) as client:
             try:
                 # 1. Discover capabilities
-                card = await client.get_agent_card(agent_url)
+                card = await client.get_agent_card(effective_url)
             except Exception as e:
                 return self._error(
                     f"Failed to fetch Agent Card from {agent_url}: {e}. "
@@ -115,7 +137,7 @@ class A2ADelegateTool(BaseTool):
             history_messages: list[A2AMessage] = []
             if task_id:
                 try:
-                    existing_task = await client.get_task(agent_url, task_id)
+                    existing_task = await client.get_task(effective_url, task_id)
                     # Ensure the external agent actually supports state transitions
                     if not card.capabilities.state_transition_history:
                         return self._error(
@@ -144,7 +166,7 @@ class A2ADelegateTool(BaseTool):
 
             try:
                 # 4. Submit task (blocking send for now)
-                result_task = await client.send_task(agent_url, params)
+                result_task = await client.send_task(effective_url, params)
             except Exception as e:
                 return self._error(f"Failed to submit task to {agent_url}: {e}")
 
