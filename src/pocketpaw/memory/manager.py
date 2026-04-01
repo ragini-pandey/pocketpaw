@@ -639,6 +639,7 @@ class MemoryManager:
         self,
         memory_type: MemoryType,
         limit: int = 100,
+        user_id: str | None = None,
     ) -> list[MemoryEntry]:
         """Get all memories of a specific type.
 
@@ -648,11 +649,12 @@ class MemoryManager:
         Args:
             memory_type: The type of memory to retrieve.
             limit: Maximum number of entries to return.
+            user_id: Optional user ID for scoped memory retrieval.
 
         Returns:
             List of MemoryEntry objects of the requested type.
         """
-        return await self._store.get_by_type(memory_type, limit=limit)
+        return await self._store.get_by_type(memory_type, limit=limit, user_id=user_id)
     
     
     async def clear_session(self, session_key: str) -> int:
