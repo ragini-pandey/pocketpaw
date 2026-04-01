@@ -28,8 +28,10 @@ _COGNITIVE_SYSTEM_PROMPT = (
     "Return only valid JSON with no explanation, preamble, or markdown fencing."
 )
 
-# Sentinel session key so cognitive calls are isolated from conversation history.
-_COGNITIVE_SESSION_KEY = "__cognitive__"
+# Generate unique session keys so cognitive calls don't pollute each other's history.
+def _cognitive_session_key() -> str:
+    import uuid
+    return f"__cognitive__{uuid.uuid4().hex[:8]}"
 
 # Event types whose `content` field carries response text
 _TEXT_EVENT_TYPES = frozenset({"message", "content", "text"})
@@ -111,7 +113,7 @@ class PocketPawCognitiveEngine:
         async for event in backend.run(
             message=prompt,
             system_prompt=_COGNITIVE_SYSTEM_PROMPT,
-            session_key=_COGNITIVE_SESSION_KEY,
+            session_key=_cognitive_session_key(),
         ):
             event_type = getattr(event, "type", "")
             content = getattr(event, "content", "") or ""

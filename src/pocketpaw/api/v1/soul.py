@@ -7,9 +7,12 @@ POST /soul/recall, POST /soul/forget.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, UploadFile
+
+logger = logging.getLogger(__name__)
 
 from pocketpaw.api.deps import require_scope
 
@@ -97,6 +100,7 @@ async def edit_core_memory(body: dict):
             return {"error": "Provide 'persona' or 'human'."}
         await mgr.soul.edit_core_memory(**kwargs)
         mgr._dirty = True
+        logger.warning("Soul core memory edited: fields=%s", list(kwargs.keys()))
         return {"ok": True, "updated": list(kwargs.keys())}
     except Exception as exc:
         return {"error": f"Failed: {exc}"}
@@ -150,6 +154,7 @@ async def soul_forget(body: dict):
     if not body.get("query"):
         return {"error": "Missing 'query'"}
     result = await mgr.forget(body["query"])
+    logger.warning("Soul forget executed: query=%r, result=%s", body["query"], result)
     return result
 
 
