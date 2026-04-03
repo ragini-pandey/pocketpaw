@@ -26,8 +26,9 @@ def create_api_app():
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        from pocketpaw.dashboard_lifecycle import startup_event as lifecycle_startup
         from pocketpaw.dashboard_lifecycle import shutdown_event as lifecycle_shutdown
+        from pocketpaw.dashboard_lifecycle import startup_event as lifecycle_startup
+
         await lifecycle_startup()
         yield
         await lifecycle_shutdown()

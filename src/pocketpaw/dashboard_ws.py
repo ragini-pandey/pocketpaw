@@ -151,7 +151,10 @@ async def websocket_handler(
             "present" if cookie_token else "missing",
             is_localhost,
         )
-        await websocket.close(code=4003, reason="Unauthorized: invalid or missing authentication token")
+        await websocket.close(
+            code=4003,
+            reason="Unauthorized: invalid or missing authentication token",
+        )
         return
 
     await websocket.accept()

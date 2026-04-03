@@ -15,8 +15,12 @@ from pocketpaw.memory.protocol import MemoryEntry, MemoryType
 @pytest.fixture
 def temp_memory_path():
     """Create a temporary directory for memory tests."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        yield Path(tmpdir)
+    tmpdir = tempfile.mkdtemp()
+    yield Path(tmpdir)
+    # Windows: SQLite WAL files may still be locked; best-effort cleanup
+    import shutil
+
+    shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 @pytest.fixture

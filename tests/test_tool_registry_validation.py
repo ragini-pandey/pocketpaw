@@ -8,9 +8,8 @@ from typing import Any
 
 import pytest
 
-from pocketpaw.tools.protocol import BaseTool, ToolDefinition
+from pocketpaw.tools.protocol import BaseTool
 from pocketpaw.tools.registry import ToolRegistry
-
 
 # ---------------------------------------------------------------------------
 # Helpers

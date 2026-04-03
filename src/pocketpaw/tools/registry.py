@@ -120,7 +120,8 @@ class ToolRegistry:
         if schema and "required" in schema:
             required_params = schema.get("required", [])
             missing_params = [
-                p for p in required_params
+                p
+                for p in required_params
                 if params.get(p) is None
                 or (isinstance(params.get(p), str) and not params.get(p).strip())
             ]

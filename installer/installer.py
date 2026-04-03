@@ -1070,7 +1070,6 @@ class PocketPawInstaller:
 
         # 5. Backend selection
         self.backend = self.ui.prompt_backend()
-        
 
         # 6. LLM provider
         self.llm_provider = self.ui.prompt_llm_provider()

@@ -19,7 +19,6 @@ import pytest
 
 from pocketpaw.agents.protocol import AgentEvent
 from pocketpaw.soul.cognitive import (
-    _COGNITIVE_SESSION_KEY,
     _COGNITIVE_SYSTEM_PROMPT,
     PocketPawCognitiveEngine,
 )
@@ -81,7 +80,7 @@ async def test_pocketpaw_engine_passes_correct_params():
 
     assert received["message"] == prompt
     assert received["system_prompt"] == _COGNITIVE_SYSTEM_PROMPT
-    assert received["session_key"] == _COGNITIVE_SESSION_KEY
+    assert received["session_key"].startswith("__cognitive__")
 
 
 @pytest.mark.asyncio

@@ -28,10 +28,13 @@ _COGNITIVE_SYSTEM_PROMPT = (
     "Return only valid JSON with no explanation, preamble, or markdown fencing."
 )
 
+
 # Generate unique session keys so cognitive calls don't pollute each other's history.
 def _cognitive_session_key() -> str:
     import uuid
+
     return f"__cognitive__{uuid.uuid4().hex[:8]}"
+
 
 # Event types whose `content` field carries response text
 _TEXT_EVENT_TYPES = frozenset({"message", "content", "text"})

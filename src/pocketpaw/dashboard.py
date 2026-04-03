@@ -25,11 +25,11 @@ Changes:
 """
 
 import asyncio
-from contextlib import asynccontextmanager
 import base64
 import io
 import json
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 try:
@@ -133,6 +133,7 @@ async def startup_event():
 async def shutdown_event():
     await _shutdown_event(_stop_channel_adapter_fn=_stop_channel_adapter)
 
+
 # Create FastAPI app
 app = FastAPI(
     lifespan=lifespan,
@@ -235,9 +236,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-
 
 
 # ==================== MCP Server API ====================

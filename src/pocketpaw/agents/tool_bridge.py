@@ -23,7 +23,7 @@ import logging
 from typing import Any
 
 from pocketpaw.tools.policy import ToolPolicy
-from pocketpaw.tools.protocol import BaseTool, normalize_schema
+from pocketpaw.tools.protocol import BaseTool
 from pocketpaw.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)

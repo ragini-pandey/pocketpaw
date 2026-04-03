@@ -12,9 +12,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, UploadFile
 
-logger = logging.getLogger(__name__)
-
 from pocketpaw.api.deps import require_scope
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Soul"], dependencies=[Depends(require_scope("settings:read"))])
 
