@@ -202,6 +202,70 @@ class TestInstallSkill:
         # The audit logger must have been called
         assert mock_audit_logger.log.called
 
+    def test_install_symlinks_are_skipped(self, client):
+        """Symlinks inside a cloned skill dir must not be dereferenced."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        async def _fake_communicate():
+            return b"", b""
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = _fake_communicate
+
+        async def _fake_create_subprocess(*args, **kwargs):
+            return mock_proc
+
+        mock_loader = MagicMock()
+        mock_audit_logger = MagicMock()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            skill_dir = Path(tmpdir) / "my-skill"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text("# My skill")
+            (skill_dir / "legit.txt").write_text("real content")
+            # Create a symlink pointing outside the skill dir
+            (skill_dir / "evil_link").symlink_to("/etc/passwd")
+
+            mock_tmpdir_ctx = MagicMock()
+            mock_tmpdir_ctx.__enter__ = MagicMock(return_value=tmpdir)
+            mock_tmpdir_ctx.__exit__ = MagicMock(return_value=False)
+
+            copytree_calls = []
+
+            def _tracking_copytree(*args, **kwargs):
+                copytree_calls.append(kwargs)
+                # Don't actually copy, just record the call
+                return None
+
+            with (
+                patch("asyncio.create_subprocess_exec", side_effect=_fake_create_subprocess),
+                patch(
+                    "pocketpaw.skills.installer.get_skill_loader",
+                    return_value=mock_loader,
+                ),
+                patch(
+                    "pocketpaw.skills.installer.get_audit_logger",
+                    return_value=mock_audit_logger,
+                ),
+                patch("tempfile.TemporaryDirectory", return_value=mock_tmpdir_ctx),
+                patch("pathlib.Path.mkdir"),
+                patch("shutil.rmtree"),
+                patch(
+                    "pocketpaw.skills.installer.shutil.copytree",
+                    side_effect=_tracking_copytree,
+                ),
+            ):
+                resp = client.post("/api/v1/skills/install", json={"source": "owner/repo"})
+
+            assert resp.status_code == 200
+            # copytree must have been called with the ignore callback
+            assert len(copytree_calls) >= 1
+            assert "ignore" in copytree_calls[0]
+            assert copytree_calls[0]["ignore"] is not None
+
 
 class TestRemoveSkill:
     """Tests for POST /skills/remove."""

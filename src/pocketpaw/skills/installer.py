@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import shutil
 import tempfile
@@ -13,6 +14,11 @@ from pocketpaw.security.audit import AuditEvent, AuditSeverity, get_audit_logger
 from pocketpaw.skills.loader import get_skill_loader
 
 logger = logging.getLogger(__name__)
+
+
+def _ignore_symlinks(src: str, names: list[str]) -> set[str]:
+    """Return names that are symlinks so ``shutil.copytree`` skips them."""
+    return {n for n in names if os.path.islink(os.path.join(src, n))}
 
 
 class SkillInstallError(Exception):
@@ -110,7 +116,7 @@ async def install_skill_from_source(source: str) -> list[str]:
                 dest = install_dir / name
                 if dest.exists():
                     shutil.rmtree(dest)
-                shutil.copytree(src_dir, dest)
+                shutil.copytree(src_dir, dest, ignore=_ignore_symlinks)
                 installed.append(name)
 
             if not installed:
