@@ -279,7 +279,7 @@ class TestSkillsRESTEndpoints:
 
             # Patch install dir to use temp dir
             install_path = Path(fake_home) / ".agents" / "skills"
-            with patch("pathlib.Path.home", return_value=Path(fake_home)):
+            with patch("pocketpaw.skills.installer.INSTALL_DIR", install_path):
                 from pocketpaw.dashboard import install_skill
 
                 result = await install_skill(request)

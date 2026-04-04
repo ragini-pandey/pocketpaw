@@ -389,7 +389,7 @@
       </div>
 
       <!-- Compact system status -->
-      <div class="grid grid-cols-4 gap-1 mt-2 px-1 py-2 bg-black/20 rounded-lg">
+      <div :class="'grid gap-1 mt-2 px-1 py-2 bg-black/20 rounded-lg ' + (typeof status.battery === 'number' ? 'grid-cols-4' : 'grid-cols-3')">
         <div class="text-center">
           <div class="text-[10px] text-white/30">CPU</div>
           <div class="text-[11px] font-mono text-white/70" x-text="typeof status.cpu === 'number' ? status.cpu + '%' : status.cpu"></div>
@@ -402,9 +402,10 @@
           <div class="text-[10px] text-white/30">Disk</div>
           <div class="text-[11px] font-mono text-white/70" x-text="typeof status.disk === 'number' ? status.disk + '%' : status.disk"></div>
         </div>
-        <div class="text-center">
-          <div class="text-[10px] text-white/30">Bat</div>
-          <div class="text-[11px] font-mono text-white/70" x-text="typeof status.battery === 'number' ? status.battery + '%' : status.battery"></div>
+        <div class="text-center" x-show="typeof status.battery === 'number'"
+>
+          <div class="text-[10px] text-white/30">Battery</div>
+          <div class="text-[11px] font-mono text-white/70" x-text="typeof status.battery === 'number' ? status.battery + '%' : '—'"></div>
         </div>
       </div>
 

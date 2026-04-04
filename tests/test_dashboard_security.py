@@ -10,6 +10,7 @@ Covers:
 """
 
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -261,6 +262,54 @@ class TestSecurityHeaders:
         # Regular HTTP request — no HSTS
         resp = test_client.get("/")
         assert "Strict-Transport-Security" not in resp.headers
+
+
+class TestFrontendSvgSafety:
+    def test_memory_graph_uses_sanitized_svg_insertion(self):
+        js_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "pocketpaw"
+            / "frontend"
+            / "js"
+            / "features"
+            / "transparency.js"
+        )
+        source = js_path.read_text(encoding="utf-8")
+
+        assert "safeInsertGraphSvg(container, svg)" in source
+        assert "container.innerHTML = graphUnavailable ? '' : svg;" not in source
+
+    def test_memory_prune_requires_confirmation(self):
+        js_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "pocketpaw"
+            / "frontend"
+            / "js"
+            / "features"
+            / "transparency.js"
+        )
+        source = js_path.read_text(encoding="utf-8")
+
+        assert "pruneMemories()" in source
+        assert "confirm(" in source
+        assert "Prune memories older than" in source
+
+    def test_memory_delete_requires_confirmation(self):
+        js_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "pocketpaw"
+            / "frontend"
+            / "js"
+            / "features"
+            / "transparency.js"
+        )
+        source = js_path.read_text(encoding="utf-8")
+
+        assert "deleteMemory(id)" in source
+        assert "Delete this memory permanently?" in source
 
 
 class TestSessionTokenEndpoint:
