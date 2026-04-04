@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -52,11 +51,8 @@ async def search_skills_library(q: str = "", limit: int = Query(30, ge=1, le=100
 @router.post("/skills/install")
 async def install_skill(request: Request):
     """Install a skill by cloning its GitHub repo."""
-    import shutil
-    import tempfile
-    from pathlib import Path
-
     from pocketpaw.skills import get_skill_loader
+    from pocketpaw.skills.installer import install_skills_from_github
 
     data = await request.json()
     source = data.get("source", "").strip()
@@ -73,62 +69,24 @@ async def install_skill(request: Request):
     owner, repo = parts[0], parts[1]
     skill_name = parts[2] if len(parts) >= 3 else None
 
-    install_dir = Path.home() / ".agents" / "skills"
-    install_dir.mkdir(parents=True, exist_ok=True)
-
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            proc = await asyncio.create_subprocess_exec(
-                "git",
-                "clone",
-                "--depth=1",
-                f"https://github.com/{owner}/{repo}.git",
-                tmpdir,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-            if proc.returncode != 0:
-                err = stderr.decode(errors="replace").strip()
-                raise HTTPException(status_code=500, detail=f"Clone failed: {err}")
-
-            tmp = Path(tmpdir)
-            skill_dirs: list[tuple[str, Path]] = []
-
-            if skill_name:
-                for candidate in [tmp / skill_name, tmp / "skills" / skill_name]:
-                    if (candidate / "SKILL.md").exists():
-                        skill_dirs.append((skill_name, candidate))
-                        break
-            else:
-                for scan_dir in [tmp, tmp / "skills"]:
-                    if not scan_dir.is_dir():
-                        continue
-                    for item in sorted(scan_dir.iterdir()):
-                        if item.is_dir() and (item / "SKILL.md").exists():
-                            skill_dirs.append((item.name, item))
-
-            if not skill_dirs:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No SKILL.md found for '{skill_name or source}'",
-                )
-
-            installed = []
-            for name, src_dir in skill_dirs:
-                dest = install_dir / name
-                if dest.exists():
-                    shutil.rmtree(dest)
-                shutil.copytree(src_dir, dest)
-                installed.append(name)
-
-            loader = get_skill_loader()
-            loader.reload()
-            return {"status": "ok", "installed": installed}
+        installed = await install_skills_from_github(
+            owner=owner,
+            repo=repo,
+            skill_name=skill_name,
+            timeout=30,
+        )
+        loader = get_skill_loader()
+        loader.reload()
+        return {"status": "ok", "installed": installed}
 
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Clone timed out (30s)")
+    except RuntimeError as exc:
+        detail = str(exc)
+        if "No SKILL.md" in detail:
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=500, detail=detail)
     except HTTPException:
         raise
     except Exception as exc:
