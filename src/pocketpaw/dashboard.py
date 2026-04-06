@@ -513,91 +513,21 @@ async def search_skills_library(q: str = "", limit: int = 30):
 @app.post("/api/skills/install")
 async def install_skill(request: Request):
     """Install a skill by cloning its GitHub repo and copying the skill directory."""
-    import shutil
-    import tempfile
-    from pathlib import Path
-
     from fastapi.responses import JSONResponse
+
+    from pocketpaw.skills.installer import SkillInstallError, install_skill_from_source
 
     data = await request.json()
     source = data.get("source", "").strip()
-    if not source:
-        return JSONResponse({"error": "Missing 'source' field"}, status_code=400)
-
-    if ".." in source or ";" in source or "|" in source or "&" in source:
-        return JSONResponse({"error": "Invalid source format"}, status_code=400)
-
-    parts = source.split("/")
-    if len(parts) < 2:
-        return JSONResponse(
-            {"error": "Source must be owner/repo or owner/repo/skill"}, status_code=400
-        )
-
-    owner, repo = parts[0], parts[1]
-    skill_name = parts[2] if len(parts) >= 3 else None
-
-    install_dir = Path.home() / ".agents" / "skills"
-    install_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            proc = await asyncio.create_subprocess_exec(
-                "git",
-                "clone",
-                "--depth=1",
-                f"https://github.com/{owner}/{repo}.git",
-                tmpdir,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-            if proc.returncode != 0:
-                err = stderr.decode(errors="replace").strip()
-                return JSONResponse({"error": f"Clone failed: {err}"}, status_code=500)
-
-            tmp = Path(tmpdir)
-
-            # Find skill directories containing SKILL.md.
-            # Repos may store skills at root level or inside a skills/ subdirectory.
-            skill_dirs: list[tuple[str, Path]] = []
-
-            if skill_name:
-                for candidate in [tmp / skill_name, tmp / "skills" / skill_name]:
-                    if (candidate / "SKILL.md").exists():
-                        skill_dirs.append((skill_name, candidate))
-                        break
-            else:
-                for scan_dir in [tmp, tmp / "skills"]:
-                    if not scan_dir.is_dir():
-                        continue
-                    for item in sorted(scan_dir.iterdir()):
-                        if item.is_dir() and (item / "SKILL.md").exists():
-                            skill_dirs.append((item.name, item))
-
-            if not skill_dirs:
-                return JSONResponse(
-                    {"error": f"No SKILL.md found for '{skill_name or source}'"},
-                    status_code=404,
-                )
-
-            installed = []
-            for name, src_dir in skill_dirs:
-                dest = install_dir / name
-                if dest.exists():
-                    shutil.rmtree(dest)
-                shutil.copytree(src_dir, dest)
-                installed.append(name)
-
-            loader = get_skill_loader()
-            loader.reload()
-            return {"status": "ok", "installed": installed}
-
-    except TimeoutError:
-        return JSONResponse({"error": "Clone timed out (30s)"}, status_code=504)
-    except Exception as exc:
+        installed = await install_skill_from_source(source)
+        return {"status": "ok", "installed": installed}
+    except SkillInstallError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
+    except Exception:
         logger.exception("Skill install failed")
-        return JSONResponse({"error": str(exc)}, status_code=500)
+        return JSONResponse({"error": "Skill install failed"}, status_code=500)
 
 
 @app.post("/api/skills/remove")
