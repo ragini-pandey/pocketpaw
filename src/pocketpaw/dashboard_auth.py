@@ -8,6 +8,7 @@ Extracted from dashboard.py — contains:
   and token regeneration endpoints
 """
 
+import hmac
 import io
 import logging
 
@@ -249,7 +250,7 @@ async def _auth_dispatch(request: Request) -> Response | None:
 
     # 1. Check Query Param (master token or session token)
     if token:
-        if token == current_token:
+        if hmac.compare_digest(token, current_token):
             is_valid = True
         elif ":" in token and verify_session_token(token, current_token):
             is_valid = True
@@ -259,7 +260,7 @@ async def _auth_dispatch(request: Request) -> Response | None:
         bearer_value = (
             auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
         )
-        if bearer_value == current_token:
+        if hmac.compare_digest(bearer_value, current_token):
             is_valid = True
         elif ":" in bearer_value and verify_session_token(bearer_value, current_token):
             is_valid = True
@@ -268,7 +269,7 @@ async def _auth_dispatch(request: Request) -> Response | None:
     if not is_valid:
         cookie_token = request.cookies.get("pocketpaw_session")
         if cookie_token:
-            if cookie_token == current_token:
+            if hmac.compare_digest(cookie_token, current_token):
                 is_valid = True
             elif ":" in cookie_token and verify_session_token(cookie_token, current_token):
                 is_valid = True
@@ -402,7 +403,7 @@ async def cookie_login(request: Request):
     submitted = body.get("token", "").strip()
     master = get_access_token()
 
-    is_valid = submitted == master
+    is_valid = hmac.compare_digest(submitted, master)
     # Accept OAuth2 access tokens (ppat_*)
     if not is_valid and submitted.startswith("ppat_"):
         try:
