@@ -51,47 +51,16 @@ async def search_skills_library(q: str = "", limit: int = Query(30, ge=1, le=100
 @router.post("/skills/install")
 async def install_skill(request: Request):
     """Install a skill by cloning its GitHub repo."""
-    from pocketpaw.skills import get_skill_loader
-    from pocketpaw.skills.installer import install_skills_from_github
+    from pocketpaw.skills.installer import SkillInstallError, install_skill_from_source
 
     data = await request.json()
     source = data.get("source", "").strip()
-    if not source:
-        raise HTTPException(status_code=400, detail="Missing 'source' field")
-
-    if ".." in source or ";" in source or "|" in source or "&" in source:
-        raise HTTPException(status_code=400, detail="Invalid source format")
-
-    parts = source.split("/")
-    if len(parts) < 2:
-        raise HTTPException(status_code=400, detail="Source must be owner/repo or owner/repo/skill")
-
-    owner, repo = parts[0], parts[1]
-    skill_name = parts[2] if len(parts) >= 3 else None
 
     try:
-        installed = await install_skills_from_github(
-            owner=owner,
-            repo=repo,
-            skill_name=skill_name,
-            timeout=30,
-        )
-        loader = get_skill_loader()
-        loader.reload()
+        installed = await install_skill_from_source(source)
         return {"status": "ok", "installed": installed}
-
-    except TimeoutError:
-        raise HTTPException(status_code=504, detail="Clone timed out (30s)")
-    except RuntimeError as exc:
-        detail = str(exc)
-        if "No SKILL.md" in detail:
-            raise HTTPException(status_code=404, detail=detail)
-        raise HTTPException(status_code=500, detail=detail)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Skill install failed")
-        raise HTTPException(status_code=500, detail=str(exc))
+    except SkillInstallError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
 
 
 @router.post("/skills/remove")

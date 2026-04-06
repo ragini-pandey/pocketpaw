@@ -175,6 +175,30 @@ async def _auth_dispatch(request: Request) -> Response | None:
     if request.method == "OPTIONS":
         return None
 
+    path = request.url.path
+    client_ip = request.client.host if request.client else "unknown"
+
+    # Rate-limit authentication endpoints BEFORE exempt-path processing.
+    # Login and QR endpoints are intentionally exempt from token auth (the user
+    # does not yet have a token), but they MUST still be rate-limited to prevent
+    # unlimited brute-force / token-enumeration attacks (OWASP A07).
+    _AUTH_RATE_LIMITED_PREFIXES = (
+        "/api/auth/login",
+        "/api/v1/auth/login",
+        "/api/qr",
+        "/api/v1/qr",
+    )
+    if any(path.startswith(p) for p in _AUTH_RATE_LIMITED_PREFIXES):
+        rl_info = auth_limiter.check(client_ip)
+        if not rl_info.allowed:
+            _audit_auth_event("brute_force_blocked", request, status="block")
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests"},
+                headers=rl_info.headers(),
+            )
+        request.state.rate_limit_headers = rl_info.headers()
+
     # Exempt routes — return None to let the request through
     exempt_paths = [
         "/static",
@@ -198,8 +222,8 @@ async def _auth_dispatch(request: Request) -> Response | None:
         "/api/v1/oauth/token",
     ]
 
-    for path in exempt_paths:
-        if request.url.path.startswith(path):
+    for exempt in exempt_paths:
+        if path.startswith(exempt):
             return None  # allow through
 
     # Rate limiting — pick tier based on path

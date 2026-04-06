@@ -915,6 +915,8 @@ class Settings(BaseSettings):
         Runs format validation on API keys before saving; logs warnings but
         never blocks or raises.
         """
+        # TODO: When adding new sensitive fields, ensure they are included in SECRET_FIELDS in
+        # pocketpaw/credentials.py to prevent plaintext storage.
         from pocketpaw.credentials import SECRET_FIELDS, get_credential_store
 
         config_path = get_config_path()
