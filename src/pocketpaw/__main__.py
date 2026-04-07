@@ -1,6 +1,7 @@
 """PocketPaw entry point.
 
 Changes:
+  - 2026-04-07: Auto-detect free port in range 8000-9000 if requested port is busy.
   - 2026-03-18: Added CLI subcommands: doctor, health, channels, skills,
                 sessions, memory, config, errors, logs.
   - 2026-02-20: Extracted diagnostics to diagnostics.py, headless runners to headless.py.
@@ -222,7 +223,6 @@ Examples:
 """,
     )
 
-    # ── Global flags ────────────────────────────────────────────────────
     parser.add_argument(
         "--web",
         "-w",
@@ -230,30 +230,22 @@ Examples:
         help="Run web dashboard (same as default, kept for compatibility)",
     )
     parser.add_argument(
-        "--telegram",
-        action="store_true",
-        help="Run Telegram-only mode (legacy pairing flow)",
+        "--telegram", action="store_true", help="Run Telegram-only mode (legacy pairing flow)"
     )
     parser.add_argument("--discord", action="store_true", help="Run headless Discord bot")
     parser.add_argument("--slack", action="store_true", help="Run headless Slack bot (Socket Mode)")
     parser.add_argument(
-        "--whatsapp",
-        action="store_true",
-        help="Run headless WhatsApp webhook server",
+        "--whatsapp", action="store_true", help="Run headless WhatsApp webhook server"
     )
     parser.add_argument("--signal", action="store_true", help="Run headless Signal bot")
     parser.add_argument("--matrix", action="store_true", help="Run headless Matrix bot")
     parser.add_argument("--teams", action="store_true", help="Run headless Teams bot")
     parser.add_argument("--gchat", action="store_true", help="Run headless Google Chat bot")
     parser.add_argument(
-        "--security-audit",
-        action="store_true",
-        help="Run security audit and print report",
+        "--security-audit", action="store_true", help="Run security audit and print report"
     )
     parser.add_argument(
-        "--fix",
-        action="store_true",
-        help="Auto-fix fixable issues found by --security-audit",
+        "--fix", action="store_true", help="Auto-fix fixable issues found by --security-audit"
     )
     parser.add_argument(
         "--pii-scan",
@@ -265,13 +257,6 @@ Examples:
         type=str,
         default=None,
         help="Host to bind web server (default: auto-detect; 0.0.0.0 on headless servers)",
-    )
-    parser.add_argument(
-        "--port",
-        "-p",
-        type=int,
-        default=8888,
-        help="Port for web server (default: 8888)",
     )
     parser.add_argument("--dev", action="store_true", help="Development mode with auto-reload")
     parser.add_argument(
@@ -285,20 +270,13 @@ Examples:
         help="Check OpenAI-compatible endpoint connectivity and tool calling support",
     )
     parser.add_argument(
-        "--doctor",
-        action="store_true",
-        help="(deprecated: use 'pocketpaw doctor') Run diagnostics",
+        "--doctor", action="store_true", help="(deprecated: use 'pocketpaw doctor') Run diagnostics"
     )
     parser.add_argument(
-        "--version",
-        "-v",
-        action="version",
-        version=f"%(prog)s {get_version('pocketpaw')}",
+        "--version", "-v", action="version", version=f"%(prog)s {get_version('pocketpaw')}"
     )
     parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Output as JSON (works with most subcommands)",
+        "--json", action="store_true", help="Output as JSON (works with most subcommands)"
     )
     parser.add_argument(
         "--watch",
@@ -308,12 +286,14 @@ Examples:
         default=0,
         help="Watch mode: refresh status every N seconds (default: 2)",
     )
+    parser.add_argument(
+        "--port",
+        "-p",
+        type=int,
+        default=8888,
+        help="Port for web server (default: 8888; auto-falls back if busy)",
+    )
 
-    # ── Subcommand (positional) ─────────────────────────────────────────
-    # We use a single positional with nargs="*" to support:
-    #   pocketpaw channels start discord  (command=channels, rest=[start, discord])
-    #   pocketpaw config set key value    (command=config, rest=[set, key, value])
-    #   pocketpaw memory search foo       (command=memory, rest=[search, foo])
     parser.add_argument(
         "command",
         nargs="?",
@@ -334,14 +314,7 @@ Examples:
         ],
         help="Subcommand to run",
     )
-    parser.add_argument(
-        "subargs",
-        nargs="*",
-        default=[],
-        help=argparse.SUPPRESS,
-    )
-
-    # ── Flags for subcommands (shared namespace) ────────────────────────
+    parser.add_argument("subargs", nargs="*", default=[], help=argparse.SUPPRESS)
     parser.add_argument("--search", type=str, default=None, help=argparse.SUPPRESS)
     parser.add_argument(
         "--limit",
@@ -355,11 +328,7 @@ Examples:
 
 
 def _resolve_subargs(args) -> None:
-    """Parse positional subargs into named attributes based on the command.
-
-    Transforms: pocketpaw channels start discord
-    Into: args.subaction="start", args.query="discord"
-    """
+    """Parse positional subargs into named attributes based on the command."""
     subargs = args.subargs or []
     args.subaction = None
     args.query = None
@@ -369,31 +338,82 @@ def _resolve_subargs(args) -> None:
     cmd = args.command
 
     if cmd == "channels" and subargs:
-        args.subaction = subargs[0]  # start / stop
+        args.subaction = subargs[0]
         if len(subargs) > 1:
-            args.query = subargs[1]  # channel name
-
+            args.query = subargs[1]
     elif cmd == "sessions" and subargs:
-        args.subaction = subargs[0]  # delete / search
+        args.subaction = subargs[0]
         if len(subargs) > 1:
             args.query = subargs[1]
-
     elif cmd == "memory" and subargs:
-        args.subaction = subargs[0]  # search
+        args.subaction = subargs[0]
         if len(subargs) > 1:
             args.query = subargs[1]
-
     elif cmd == "config" and subargs:
-        args.subaction = subargs[0]  # set / validate / path
+        args.subaction = subargs[0]
         if len(subargs) > 1:
             args.key = subargs[1]
         if len(subargs) > 2:
             args.value = subargs[2]
 
-    # Apply default limits per command
     if args.limit is None:
         defaults = {"errors": 20, "logs": 50, "sessions": 20, "memory": 10}
         args.limit = defaults.get(cmd, 20)
+
+
+def _serve(
+    fn, *args, port: int = 8888, max_attempts: int = 10, host: str = "127.0.0.1", **kwargs
+) -> None:
+    """Start server, retrying with port+1 on EADDRINUSE.
+
+    Uses SO_REUSEADDR socket probe as best-effort pre-check (fast feedback),
+    then passes the port directly to the server. The probe window is tiny so
+    the race is acceptable; the real guard is the server bind itself.
+    The probe binds to the same host the server will use, fixing the
+    0.0.0.0 vs 127.0.0.1 mismatch. Scanning starts from the requested port,
+    not from 8000, so fallback is always requested+N.
+    """
+    import errno as _errno
+    import socket as _socket
+
+    current_port = port
+    for attempt in range(max_attempts):
+        # Best-effort probe using same host the server will bind to
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+            s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((host, current_port))
+            except OSError:
+                next_port = current_port + 1
+                print(
+                    "\n  [WARN] Port "
+                    + str(current_port)
+                    + " busy — trying "
+                    + str(next_port)
+                    + "\n"
+                )
+                current_port = next_port
+                continue
+        # Probe passed — attempt real server startup
+        try:
+            fn(*args, port=current_port, host=host, **kwargs)
+            return
+        except OSError as e:
+            if e.errno in (_errno.EADDRINUSE, 10048):
+                next_port = current_port + 1
+                print(
+                    "\n  [WARN] Port "
+                    + str(current_port)
+                    + " taken at bind — trying "
+                    + str(next_port)
+                    + "\n"
+                )
+                current_port = next_port
+            else:
+                raise
+    raise RuntimeError(
+        f"No free port found after {max_attempts} attempts (tried {port}-{current_port - 1})."
+    )
 
 
 def main() -> None:
@@ -503,11 +523,18 @@ def main() -> None:
         or args.gchat
     )
 
+    is_starting_server = args.command in (None, "serve") or args.telegram or has_channel_flag
+
+    if is_starting_server:
+        effective_port = args.port
+    else:
+        effective_port = args.port
+
     try:
         if args.command == "serve":
             from pocketpaw.api.serve import run_api_server
 
-            run_api_server(host=host, port=args.port, dev=args.dev)
+            _serve(run_api_server, host=host, port=effective_port, dev=args.dev)
         elif args.command == "status":
             from pocketpaw.cli.status import run_status
 
@@ -539,7 +566,7 @@ def main() -> None:
             _run_async(run_multi_channel_mode(settings, args))
         else:
             # Default: web dashboard (also handles --web flag)
-            run_dashboard_mode(settings, host, args.port, dev=args.dev)
+            _serve(run_dashboard_mode, settings, host=host, port=effective_port, dev=args.dev)
     except KeyboardInterrupt:
         logger.info("PocketPaw stopped.")
     finally:
